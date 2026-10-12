@@ -2,6 +2,8 @@ package com.royanic26.captchaaccessible
 
 import android.app.Activity
 import android.content.Intent
+import android.content.SharedPreferences
+import android.provider.Settings
 import android.graphics.Typeface
 import android.net.Uri
 import android.os.Bundle
@@ -26,6 +28,7 @@ class MainActivity : Activity() {
     private val executor = Executors.newSingleThreadExecutor()
     private val mainHandler = Handler(Looper.getMainLooper())
     private var selectedImage: Uri? = null
+    private lateinit var preferences: SharedPreferences
 
     private lateinit var serverUrlInput: EditText
     private lateinit var imageStatus: TextView
@@ -36,6 +39,7 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        preferences = getSharedPreferences("app_settings", MODE_PRIVATE)
         val density = resources.displayMetrics.density
         fun dp(value: Int) = (value * density).toInt()
         fun label(text: String, size: Float = 18f): TextView =
@@ -67,10 +71,31 @@ class MainActivity : Activity() {
             setSingleLine(true)
             inputType = android.text.InputType.TYPE_CLASS_TEXT or
                 android.text.InputType.TYPE_TEXT_VARIATION_URI
-            setText("https://YOUR-SERVER/api/v1/upload-image")
+            setText(preferences.getString("server_url", DEFAULT_SERVER_URL) ?: DEFAULT_SERVER_URL)
+            setSelectAllOnFocus(true)
             contentDescription = getString(R.string.server_url_label)
         }
         content.addView(serverUrlInput)
+        val saveAddressButton = Button(this).apply {
+            text = getString(R.string.save_server_url)
+            setOnClickListener {
+                val value = serverUrlInput.text.toString().trim()
+                if (!value.startsWith("https://", ignoreCase = true)) {
+                    showStatus(getString(R.string.https_required))
+                } else {
+                    preferences.edit().putString("server_url", value).apply()
+                    showStatus(getString(R.string.server_url_saved))
+                }
+            }
+        }
+        content.addView(saveAddressButton)
+
+        val accessibilityButton = Button(this).apply {
+            text = getString(R.string.enable_accessibility_service)
+            setOnClickListener { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
+        }
+        content.addView(accessibilityButton)
+        content.addView(label(getString(R.string.accessibility_service_hint), 14f))
 
         val chooseButton = Button(this).apply {
             text = getString(R.string.choose_image)
@@ -112,6 +137,13 @@ class MainActivity : Activity() {
         setContentView(scroll)
     }
 
+    override fun onResume() {
+        super.onResume()
+        if (::preferences.isInitialized && ::resultStatus.isInitialized) {
+            preferences.getString("last_result", null)?.let { showStatus(it) }
+        }
+    }
+
     private fun chooseImage() {
         val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
             addCategory(Intent.CATEGORY_OPENABLE)
@@ -139,13 +171,9 @@ class MainActivity : Activity() {
             showStatus(getString(R.string.select_image_first))
             return
         }
-        val endpoint = serverUrlInput.text.toString().trim()
+        val endpoint = serverUrlInput.text.toString().trim().also { preferences.edit().putString("server_url", it).apply() }
         if (!endpoint.startsWith("https://", ignoreCase = true)) {
             showStatus(getString(R.string.https_required))
-            return
-        }
-        if (endpoint.contains("YOUR-SERVER")) {
-            showStatus(getString(R.string.enter_server_address))
             return
         }
 
@@ -229,6 +257,11 @@ class MainActivity : Activity() {
     private fun announce(view: View) {
         view.sendAccessibilityEvent(AccessibilityEvent.TYPE_VIEW_FOCUSED)
         view.announceForAccessibility(view.contentDescription ?: view.toString())
+    }
+
+    companion object {
+        const val DEFAULT_SERVER_URL = "https://10.83.137.84:8000/api/v1/upload-image"
+        const val ACTION_SERVICE_RESULT = "com.royanic26.captchaaccessible.SERVICE_RESULT"
     }
 
     override fun onDestroy() {
