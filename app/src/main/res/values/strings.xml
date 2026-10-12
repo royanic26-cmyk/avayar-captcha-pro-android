@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">کپچای دسترس‌پذیر</string>
+    <string name="intro_text">تصویر را انتخاب کن و برای ارسال به سرور، دکمه ارسال را بزن.</string>
+    <string name="server_url_label">آدرس کامل endpoint سرور HTTPS</string>
+    <string name="server_url_hint">https://example.com/api/v1/upload-image</string>
+    <string name="choose_image">انتخاب تصویر کپچا</string>
+    <string name="no_image_selected">هنوز تصویری انتخاب نشده است.</string>
+    <string name="image_selected">تصویر انتخاب شد. آماده ارسال است.</string>
+    <string name="upload_image">ارسال تصویر به سرور</string>
+    <string name="upload_in_progress">در حال ارسال تصویر</string>
+    <string name="ready_status">وضعیت: آماده</string>
+    <string name="ready_to_upload">تصویر آماده ارسال است.</string>
+    <string name="select_image_first">ابتدا یک تصویر انتخاب کن.</string>
+    <string name="https_required">برای امنیت، آدرس باید با https:// شروع شود.</string>
+    <string name="enter_server_address">آدرس واقعی سرور را جایگزین YOUR-SERVER کن.</string>
+    <string name="uploading">در حال ارسال تصویر؛ لطفاً صبر کن.</string>
+    <string name="upload_success">ارسال موفق بود. کد HTTP: %1$d. پاسخ سرور: %2$s</string>
+    <string name="server_error">سرور خطا داد. کد HTTP: %1$d. پاسخ: %2$s</string>
+    <string name="upload_failed">ارسال انجام نشد: %1$s</string>
+</resources>
