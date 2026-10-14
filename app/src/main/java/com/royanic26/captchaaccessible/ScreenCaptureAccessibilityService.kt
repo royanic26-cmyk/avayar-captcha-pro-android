@@ -42,9 +42,6 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
         showFloatingButton()
     }
 
-    override fun onAccessibilityButtonClicked(displayId: Int) {
-        captureAndUpload()
-    }
 
     private fun showFloatingButton() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R || floatingButton != null) return
