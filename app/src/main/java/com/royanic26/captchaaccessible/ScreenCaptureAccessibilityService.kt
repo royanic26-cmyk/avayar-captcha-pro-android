@@ -190,12 +190,24 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
     private fun pasteIntoFocusedEditable(): Boolean {
         return try {
             val root = rootInActiveWindow ?: return false
-            val focused = root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT) ?: return false
+            val focused = root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
+                ?: findFocusedEditable(root)
+                ?: return false
             if (!focused.isEditable || !focused.isEnabled) return false
             focused.performAction(AccessibilityNodeInfo.ACTION_PASTE)
         } catch (_: Exception) {
             false
         }
+    }
+
+    private fun findFocusedEditable(node: AccessibilityNodeInfo): AccessibilityNodeInfo? {
+        if (node.isFocused && node.isEditable && node.isEnabled) return node
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i) ?: continue
+            val found = findFocusedEditable(child)
+            if (found != null) return found
+        }
+        return null
     }
 
     private fun announce(message: String) {
@@ -205,7 +217,20 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
         }
     }
 
-    override fun onAccessibilityEvent(event: AccessibilityEvent?) = Unit
+    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+        if (event == null) return
+        when (event.eventType) {
+            AccessibilityEvent.TYPE_VIEW_FOCUSED,
+            AccessibilityEvent.TYPE_VIEW_CLICKED,
+            AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED -> {
+                val source = event.source
+                if (source != null) {
+                    try { source.refresh() } catch (_: Exception) { }
+                    source.recycle()
+                }
+            }
+        }
+    }
     override fun onInterrupt() = Unit
 
     companion object {

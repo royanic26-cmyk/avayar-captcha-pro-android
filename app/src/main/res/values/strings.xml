@@ -1,15 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">کپچای دسترس‌پذیر</string>
+    <string name="app_name">آوایار کپچا</string>
     <string name="intro_text">برای خواندن کد، از دکمه شناور یا دکمه دسترس‌پذیری اندروید استفاده کن.</string>
     <string name="accessibility_usage_hint">در برنامه‌های دیگر، دکمه شناور یا دکمه دسترس‌پذیری سیستم را بزن. اسکرین‌شات ارسال می‌شود و پاسخ در کلیپ‌بورد قرار می‌گیرد؛ در صورت امکان در فیلد متنی فعال نیز پیست می‌شود.</string>
     <string name="server_url_label">آدرس کامل endpoint سرور HTTPS</string>
-    <string name="server_url_hint">https://10.83.137.84:8000/api/v1/upload-image</string>
+    <string name="server_url_hint">https://10.155.128.84:8000/api/v1/upload-image</string>
     <string name="save_server_url">ذخیره آدرس سرور</string>
     <string name="server_url_saved">آدرس سرور ذخیره شد.</string>
     <string name="enable_accessibility_service">فعال‌سازی سرویس دسترس‌پذیری</string>
-    <string name="accessibility_service_hint">در تنظیمات دسترس‌پذیری، سرویس «کپچای دسترس‌پذیر» را فعال کنید. برای اسکرین‌شات از اندروید ۱۱ یا بالاتر استفاده کنید.</string>
-    <string name="accessibility_service_name">کپچای دسترس‌پذیر - اسکرین‌شات</string>
+    <string name="accessibility_service_hint">در تنظیمات دسترس‌پذیری، سرویس «آوایار کپچا» را فعال کنید. برای اسکرین‌شات از اندروید ۱۱ یا بالاتر استفاده کنید.</string>
+    <string name="accessibility_service_name">آوایار کپچا - اسکرین‌شات</string>
     <string name="accessibility_service_description">با درخواست کاربر از صفحه اسکرین‌شات می‌گیرد و آن را به سرور تنظیم‌شده می‌فرستد.</string>
     <string name="take_screenshot_send">گرفتن اسکرین‌شات و ارسال</string>
     <string name="overlay_unavailable">نمایش دکمه شناور ممکن نشد. سرویس را خاموش و روشن کنید.</string>
