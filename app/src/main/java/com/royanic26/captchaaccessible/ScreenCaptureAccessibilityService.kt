@@ -5,6 +5,8 @@ import android.accessibilityservice.AccessibilityService.ScreenshotResult
 import android.accessibilityservice.AccessibilityService.TakeScreenshotCallback
 import android.accessibilityservice.AccessibilityServiceInfo
 import android.content.Context
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.graphics.Bitmap
 import android.view.Display
 import android.graphics.PixelFormat
@@ -15,6 +17,7 @@ import android.os.Looper
 import android.view.Gravity
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
+import android.view.accessibility.AccessibilityNodeInfo
 import android.widget.Button
 import android.widget.Toast
 import java.io.ByteArrayOutputStream
@@ -22,12 +25,14 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.util.UUID
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
 
 class ScreenCaptureAccessibilityService : AccessibilityService() {
     private val worker = Executors.newSingleThreadExecutor()
     private val mainHandler = Handler(Looper.getMainLooper())
     private var windowManager: WindowManager? = null
     private var floatingButton: Button? = null
+    private val requestInProgress = AtomicBoolean(false)
 
     override fun onServiceConnected() {
         super.onServiceConnected()
@@ -35,6 +40,10 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
             flags = flags or AccessibilityServiceInfo.FLAG_REQUEST_ACCESSIBILITY_BUTTON
         }
         showFloatingButton()
+    }
+
+    override fun onAccessibilityButtonClicked(displayId: Int) {
+        captureAndUpload()
     }
 
     private fun showFloatingButton() {
@@ -65,18 +74,24 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
             announce(getString(R.string.screenshot_android_version))
             return
         }
-        announce(getString(R.string.screenshot_in_progress))
+        if (!requestInProgress.compareAndSet(false, true)) {
+            announce(getString(R.string.request_already_running))
+            return
+        }
+        announce(getString(R.string.reading_code_wait))
         takeScreenshot(Display.DEFAULT_DISPLAY, mainExecutor, object : TakeScreenshotCallback {
             override fun onSuccess(screenshot: ScreenshotResult) {
                 val bitmap = Bitmap.wrapHardwareBuffer(screenshot.hardwareBuffer, screenshot.colorSpace)
                 screenshot.hardwareBuffer.close()
                 if (bitmap == null) {
+                    requestInProgress.set(false)
                     announce(getString(R.string.screenshot_failed))
                     return
                 }
                 val copy = bitmap.copy(Bitmap.Config.ARGB_8888, false)
                 bitmap.recycle()
                 if (copy == null) {
+                    requestInProgress.set(false)
                     announce(getString(R.string.screenshot_failed))
                     return
                 }
@@ -84,10 +99,12 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
                     val result = try { uploadBitmap(copy) } catch (e: Exception) {
                         getString(R.string.upload_failed, e.localizedMessage ?: e.javaClass.simpleName)
                     } finally { copy.recycle() }
+                    requestInProgress.set(false)
                     saveAndAnnounce(result)
                 }
             }
             override fun onFailure(errorCode: Int) {
+                requestInProgress.set(false)
                 announce(getString(R.string.screenshot_failed_code, errorCode))
             }
         })
@@ -107,7 +124,7 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
             connectTimeout = 15000
             readTimeout = 30000
             doOutput = true
-            setRequestProperty("Accept", "application/json")
+            setRequestProperty("Accept", "text/plain, application/json")
             setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
         }
         try {
@@ -120,17 +137,67 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
             }
             val code = connection.responseCode
             val stream = if (code in 200..299) connection.inputStream else connection.errorStream
-            val body = stream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty().take(1500)
-            return if (code in 200..299) getString(R.string.upload_success, code, body)
-                else getString(R.string.server_error, code, body)
+            val body = stream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty().trim().take(1500)
+            return if (code in 200..299) {
+                val answer = extractServerAnswer(body)
+                if (answer.isBlank()) getString(R.string.empty_server_response) else "${SUCCESS_PREFIX}$answer"
+            } else {
+                getString(R.string.server_error, code, body)
+            }
         } finally { connection.disconnect() }
     }
 
     private fun saveAndAnnounce(message: String) {
-        getSharedPreferences("app_settings", Context.MODE_PRIVATE).edit().putString("last_result", message).apply()
         mainHandler.post {
-            announce(message)
-            sendBroadcast(android.content.Intent(MainActivity.ACTION_SERVICE_RESULT).setPackage(packageName).putExtra("result", message))
+            val userMessage = if (message.startsWith(SUCCESS_PREFIX)) {
+                val answer = message.removePrefix(SUCCESS_PREFIX).trim()
+                copyToClipboard(answer)
+                val pasted = pasteIntoFocusedEditable()
+                if (pasted) getString(R.string.code_received_pasted, answer)
+                else getString(R.string.code_received_clipboard, answer)
+            } else {
+                message
+            }
+            getSharedPreferences("app_settings", Context.MODE_PRIVATE).edit()
+                .putString("last_result", userMessage).apply()
+            announce(userMessage)
+            sendBroadcast(android.content.Intent(MainActivity.ACTION_SERVICE_RESULT)
+                .setPackage(packageName).putExtra("result", userMessage))
+        }
+    }
+
+    private fun extractServerAnswer(body: String): String {
+        if (!body.startsWith("{") && !body.startsWith("[")) return body
+        return try {
+            val json = org.json.JSONObject(body)
+            val keys = listOf("code", "answer", "result", "text", "message")
+            keys.firstNotNullOfOrNull { key ->
+                val value = json.opt(key)
+                when (value) {
+                    null, org.json.JSONObject.NULL -> null
+                    is String -> value.takeIf { it.isNotBlank() && it != "null" }
+                    is Number, is Boolean -> value.toString()
+                    else -> null
+                }
+            } ?: body
+        } catch (_: Exception) {
+            body
+        }
+    }
+
+    private fun copyToClipboard(value: String) {
+        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(ClipData.newPlainText("captcha-code", value))
+    }
+
+    private fun pasteIntoFocusedEditable(): Boolean {
+        return try {
+            val root = rootInActiveWindow ?: return false
+            val focused = root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT) ?: return false
+            if (!focused.isEditable || !focused.isEnabled) return false
+            focused.performAction(AccessibilityNodeInfo.ACTION_PASTE)
+        } catch (_: Exception) {
+            false
         }
     }
 
@@ -143,6 +210,10 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) = Unit
     override fun onInterrupt() = Unit
+
+    companion object {
+        private const val SUCCESS_PREFIX = "__CAPTCHA_SUCCESS__:"
+    }
 
     override fun onDestroy() {
         try { floatingButton?.let { windowManager?.removeView(it) } } catch (_: Exception) { }

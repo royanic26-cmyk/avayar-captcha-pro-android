@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">کپچای دسترس‌پذیر</string>
-    <string name="intro_text">تصویر را انتخاب کن و برای ارسال به سرور، دکمه ارسال را بزن.</string>
+    <string name="intro_text">برای خواندن کد، از دکمه شناور یا دکمه دسترس‌پذیری اندروید استفاده کن.</string>
+    <string name="accessibility_usage_hint">در برنامه‌های دیگر، دکمه شناور یا دکمه دسترس‌پذیری سیستم را بزن. اسکرین‌شات ارسال می‌شود و پاسخ در کلیپ‌بورد قرار می‌گیرد؛ در صورت امکان در فیلد متنی فعال نیز پیست می‌شود.</string>
     <string name="server_url_label">آدرس کامل endpoint سرور HTTPS</string>
     <string name="server_url_hint">https://10.83.137.84:8000/api/v1/upload-image</string>
     <string name="save_server_url">ذخیره آدرس سرور</string>
@@ -14,20 +15,15 @@
     <string name="overlay_unavailable">نمایش دکمه شناور ممکن نشد. سرویس را خاموش و روشن کنید.</string>
     <string name="screenshot_android_version">گرفتن اسکرین‌شات از اندروید ۱۱ به بالا پشتیبانی می‌شود.</string>
     <string name="screenshot_in_progress">در حال گرفتن اسکرین‌شات و ارسال آن.</string>
+    <string name="reading_code_wait">در حال خواندن کد؛ لطفاً منتظر بمانید.</string>
+    <string name="request_already_running">درخواست قبلی هنوز در حال انجام است؛ لطفاً منتظر بمانید.</string>
+    <string name="code_received_pasted">کد دریافت شد و در فیلد فعال پیست شد: %1$s</string>
+    <string name="code_received_clipboard">کد دریافت شد و در کلیپ‌بورد قرار گرفت. فیلد متنی فعالی برای پیست پیدا نشد. کد: %1$s</string>
+    <string name="empty_server_response">سرور پاسخ خالی فرستاد.</string>
     <string name="screenshot_failed">گرفتن اسکرین‌شات ناموفق بود.</string>
     <string name="screenshot_failed_code">گرفتن اسکرین‌شات ناموفق بود. کد خطا: %1$d</string>
-    <string name="choose_image">انتخاب تصویر کپچا</string>
-    <string name="no_image_selected">هنوز تصویری انتخاب نشده است.</string>
-    <string name="image_selected">تصویر انتخاب شد. آماده ارسال است.</string>
-    <string name="upload_image">ارسال تصویر به سرور</string>
-    <string name="upload_in_progress">در حال ارسال تصویر</string>
     <string name="ready_status">وضعیت: آماده</string>
-    <string name="ready_to_upload">تصویر آماده ارسال است.</string>
-    <string name="select_image_first">ابتدا یک تصویر انتخاب کن.</string>
     <string name="https_required">برای امنیت، آدرس باید با https:// شروع شود.</string>
-    <string name="enter_server_address">آدرس واقعی سرور را جایگزین YOUR-SERVER کن.</string>
-    <string name="uploading">در حال ارسال تصویر؛ لطفاً صبر کن.</string>
-    <string name="upload_success">ارسال موفق بود. کد HTTP: %1$d. پاسخ سرور: %2$s</string>
     <string name="server_error">سرور خطا داد. کد HTTP: %1$d. پاسخ: %2$s</string>
     <string name="upload_failed">ارسال انجام نشد: %1$s</string>
 </resources>
