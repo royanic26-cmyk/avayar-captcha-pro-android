@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <network-security-config>
     <domain-config cleartextTrafficPermitted="false">
-        <domain includeSubdomains="false">10.83.137.84</domain>
+        <domain includeSubdomains="false">10.155.128.84</domain>
         <trust-anchors>
             <certificates src="@raw/server_cert" />
         </trust-anchors>

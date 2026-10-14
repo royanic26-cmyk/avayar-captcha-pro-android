@@ -116,7 +116,7 @@ class MainActivity : Activity() {
     }
 
     companion object {
-        const val DEFAULT_SERVER_URL = "https://10.83.137.84:8000/api/v1/upload-image"
+        const val DEFAULT_SERVER_URL = "https://10.155.128.84:8000/api/v1/upload-image"
         const val ACTION_SERVICE_RESULT = "com.royanic26.captchaaccessible.SERVICE_RESULT"
     }
 
