@@ -1,6 +1,7 @@
 package com.royanic26.captchaaccessible
 
 import android.app.Activity
+import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
 import android.graphics.Typeface
@@ -17,6 +18,7 @@ import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.concurrent.Executors
@@ -28,13 +30,19 @@ class MainActivity : Activity() {
 
   private lateinit var usernameInput: EditText
   private lateinit var passwordInput: EditText
-  private lateinit var serverUrlInput: EditText
   private lateinit var resultStatus: TextView
 
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
 
     preferences = getSharedPreferences("app_settings", MODE_PRIVATE)
+    if (preferences.getString("server_url", null).isNullOrBlank()) {
+      preferences.edit().putString("server_url", DEFAULT_SERVER_URL).apply()
+    }
+
+    // بروزرسانی خودکار آدرس سرور در پس‌زمینه
+    syncRemoteServerConfig(this)
+
     val density = resources.displayMetrics.density
     fun dp(value: Int) = (value * density).toInt()
     fun label(text: String, size: Float = 18f, bold: Boolean = false): TextView =
@@ -103,38 +111,6 @@ class MainActivity : Activity() {
     }
     content.addView(logoutButton)
 
-    content.addView(label(getString(R.string.server_url_label), 16f, true))
-    serverUrlInput = EditText(this).apply {
-      hint = getString(R.string.server_url_hint)
-      setSingleLine(true)
-      inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
-      val savedUrl = preferences.getString("server_url", null)
-      val initialUrl = if (savedUrl.isNullOrBlank() || savedUrl.contains("10.155.")) {
-        preferences.edit().putString("server_url", DEFAULT_SERVER_URL).apply()
-        DEFAULT_SERVER_URL
-      } else {
-        savedUrl
-      }
-      setText(initialUrl)
-      setSelectAllOnFocus(true)
-      contentDescription = getString(R.string.server_url_label)
-    }
-    content.addView(serverUrlInput)
-
-    val saveAddressButton = Button(this).apply {
-      text = getString(R.string.save_server_url)
-      setOnClickListener {
-        val value = serverUrlInput.text.toString().trim()
-        if (!value.startsWith("https://", ignoreCase = true)) {
-          showStatus(getString(R.string.https_required))
-        } else {
-          preferences.edit().putString("server_url", value).apply()
-          showStatus(getString(R.string.server_url_saved))
-        }
-      }
-    }
-    content.addView(saveAddressButton)
-
     val accessibilityButton = Button(this).apply {
       text = getString(R.string.enable_accessibility_service)
       setOnClickListener { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
@@ -165,19 +141,16 @@ class MainActivity : Activity() {
       return
     }
 
-    val uploadUrl = serverUrlInput.text.toString().trim().ifEmpty { DEFAULT_SERVER_URL }
-    if (!uploadUrl.startsWith("https://", ignoreCase = true)) {
-      showStatus(getString(R.string.https_required))
-      return
-    }
-
-    val baseUri = uploadUrl.substringBefore("/api/v1/").trimEnd('/')
-    val authCheckUrl = "$baseUri/api/v1/auth-check"
-
     showStatus(getString(R.string.login_checking))
 
     worker.execute {
       try {
+        // ابتدا چک کردن آخرین آدرس سرور از گیت‌هاب
+        fetchLatestServerUrlSync(this@MainActivity)
+        val uploadUrl = preferences.getString("server_url", DEFAULT_SERVER_URL) ?: DEFAULT_SERVER_URL
+        val baseUri = uploadUrl.substringBefore("/api/v1/").trimEnd('/')
+        val authCheckUrl = "$baseUri/api/v1/auth-check"
+
         val token = Base64.encodeToString("$user:$pass".toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
         val conn = (URL(authCheckUrl).openConnection() as HttpURLConnection).apply {
           requestMethod = "GET"
@@ -193,7 +166,6 @@ class MainActivity : Activity() {
             preferences.edit()
               .putString("auth_username", user)
               .putString("auth_password", pass)
-              .putString("server_url", uploadUrl)
               .putBoolean("is_logged_in", true)
               .apply()
             showStatus(getString(R.string.login_success))
@@ -237,6 +209,35 @@ class MainActivity : Activity() {
 
   companion object {
     const val DEFAULT_SERVER_URL = "https://smart-eye-captcha-651852203203.us-central1.run.app/api/v1/upload-image"
+    const val REMOTE_CONFIG_URL = "https://raw.githubusercontent.com/royanic26-cmyk/captcha-accessible-android/main/mobile-app/config.json"
     const val ACTION_SERVICE_RESULT = "com.royanic26.captchaaccessible.SERVICE_RESULT"
+
+    fun syncRemoteServerConfig(context: Context) {
+      Thread { fetchLatestServerUrlSync(context) }.start()
+    }
+
+    fun fetchLatestServerUrlSync(context: Context): String {
+      val prefs = context.getSharedPreferences("app_settings", Context.MODE_PRIVATE)
+      try {
+        val conn = (URL(REMOTE_CONFIG_URL).openConnection() as HttpURLConnection).apply {
+          requestMethod = "GET"
+          connectTimeout = 8000
+          readTimeout = 8000
+          useCaches = false
+        }
+        if (conn.responseCode in 200..299) {
+          val text = conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+          val json = JSONObject(text)
+          val newUrl = json.optString("server_url", "").trim()
+          if (newUrl.startsWith("https://", ignoreCase = true)) {
+            prefs.edit().putString("server_url", newUrl).apply()
+            conn.disconnect()
+            return newUrl
+          }
+        }
+        conn.disconnect()
+      } catch (_: Exception) { }
+      return prefs.getString("server_url", DEFAULT_SERVER_URL) ?: DEFAULT_SERVER_URL
+    }
   }
 }

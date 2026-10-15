@@ -1,5 +1,6 @@
 package com.royanic26.captchaaccessible
 
+import android.accessibilityservice.AccessibilityButtonController
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.AccessibilityService.ScreenshotResult
 import android.accessibilityservice.AccessibilityService.TakeScreenshotCallback
@@ -16,6 +17,7 @@ import android.os.Looper
 import android.util.Base64
 import android.view.Display
 import android.view.Gravity
+import android.view.View
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
@@ -35,6 +37,8 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
   private var windowManager: WindowManager? = null
   private var floatingButton: Button? = null
   private val requestInProgress = AtomicBoolean(false)
+  private var a11yButtonCallback: AccessibilityButtonController.AccessibilityButtonCallback? = null
+  private var lastScreenScanTime = 0L
 
   @Volatile
   private var lastKnownEditableNode: AccessibilityNodeInfo? = null
@@ -48,15 +52,33 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
         AccessibilityServiceInfo.FLAG_INCLUDE_NOT_IMPORTANT_VIEWS or
         AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS
     }
-    showFloatingButton()
+    MainActivity.syncRemoteServerConfig(this)
+    createFloatingButton()
+    registerShortcutCallback()
+    updateFloatingButtonVisibility()
   }
 
-  private fun showFloatingButton() {
+  private fun registerShortcutCallback() {
+    try {
+      val controller = accessibilityButtonController ?: return
+      val callback = object : AccessibilityButtonController.AccessibilityButtonCallback() {
+        override fun onClicked(controller: AccessibilityButtonController?) {
+          // وقتی کاربر دکمه دسترس‌پذیری پایین صفحه یا شورتکات کلیدهای ولوم/پاور را می‌زند
+          captureAndUpload()
+        }
+      }
+      controller.registerAccessibilityButtonCallback(callback, mainHandler)
+      a11yButtonCallback = callback
+    } catch (_: Exception) { }
+  }
+
+  private fun createFloatingButton() {
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R || floatingButton != null) return
     windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
     val button = Button(this).apply {
       text = getString(R.string.take_screenshot_send)
       contentDescription = getString(R.string.take_screenshot_send)
+      visibility = View.GONE // به صورت پیش‌فرض مخفی است و فقط در صفحات کپچا ظاهر می‌شود
       setOnClickListener { captureAndUpload() }
     }
     val params = WindowManager.LayoutParams(
@@ -69,9 +91,45 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
     try {
       windowManager?.addView(button, params)
       floatingButton = button
-    } catch (_: Exception) {
-      announce(getString(R.string.overlay_unavailable))
+    } catch (_: Exception) { }
+  }
+
+  private fun updateFloatingButtonVisibility() {
+    val btn = floatingButton ?: return
+    val hasCaptcha = isCaptchaVisibleOnScreen()
+    mainHandler.post {
+      btn.visibility = if (hasCaptcha) View.VISIBLE else View.GONE
     }
+  }
+
+  private fun isCaptchaVisibleOnScreen(): Boolean {
+    return try {
+      val root = rootInActiveWindow ?: return false
+      val pkg = root.packageName?.toString().orEmpty()
+      // در خود برنامه آوایار کپچا یا صفحه اصلی گوشی نمایش داده نشود
+      if (pkg == packageName || pkg.contains("launcher", ignoreCase = true) || pkg == "com.android.systemui") {
+        return false
+      }
+      containsCaptchaNode(root, 0)
+    } catch (_: Exception) {
+      false
+    }
+  }
+
+  private fun containsCaptchaNode(node: AccessibilityNodeInfo?, depth: Int): Boolean {
+    if (node == null || depth > 14) return false
+    if (node.isVisibleToUser) {
+      val combined = "${node.text ?: ""} ${node.hintText ?: ""} ${node.contentDescription ?: ""} ${node.viewIdResourceName ?: ""}".lowercase()
+      if (CAPTCHA_INDICATORS.any { combined.contains(it) }) {
+        return true
+      }
+    }
+    val count = node.childCount
+    for (i in 0 until count) {
+      val child = try { node.getChild(i) } catch (_: Exception) { null } ?: continue
+      if (containsCaptchaNode(child, depth + 1)) return true
+    }
+    return false
   }
 
   private fun captureAndUpload() {
@@ -95,9 +153,14 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
 
     cacheCurrentFocusedEditable()
 
+    // مخفی کردن موقت دکمه شناور هنگام گرفتن اسکرین‌شات تا روی تصویر نیفتد
+    val wasVisible = floatingButton?.visibility == View.VISIBLE
+    if (wasVisible) floatingButton?.visibility = View.INVISIBLE
+
     announce(getString(R.string.reading_code_wait))
     takeScreenshot(Display.DEFAULT_DISPLAY, mainExecutor, object : TakeScreenshotCallback {
       override fun onSuccess(screenshot: ScreenshotResult) {
+        if (wasVisible) floatingButton?.visibility = View.VISIBLE
         val bitmap = Bitmap.wrapHardwareBuffer(screenshot.hardwareBuffer, screenshot.colorSpace)
         screenshot.hardwareBuffer.close()
         if (bitmap == null) {
@@ -114,7 +177,7 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
         }
         worker.execute {
           val result = try {
-            uploadBitmap(copy, user, pass)
+            uploadBitmapWithFallback(copy, user, pass)
           } catch (e: Exception) {
             getString(R.string.upload_failed, e.localizedMessage ?: e.javaClass.simpleName)
           } finally {
@@ -126,17 +189,31 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
       }
 
       override fun onFailure(errorCode: Int) {
+        if (wasVisible) floatingButton?.visibility = View.VISIBLE
         requestInProgress.set(false)
         announce(getString(R.string.screenshot_failed_code, errorCode))
       }
     })
   }
 
-  private fun uploadBitmap(bitmap: Bitmap, user: String, pass: String): String {
+  private fun uploadBitmapWithFallback(bitmap: Bitmap, user: String, pass: String): String {
     val prefs = getSharedPreferences("app_settings", Context.MODE_PRIVATE)
-    val endpoint = prefs.getString("server_url", MainActivity.DEFAULT_SERVER_URL) ?: MainActivity.DEFAULT_SERVER_URL
-    require(endpoint.startsWith("https://", ignoreCase = true)) { getString(R.string.https_required) }
+    var endpoint = prefs.getString("server_url", MainActivity.DEFAULT_SERVER_URL) ?: MainActivity.DEFAULT_SERVER_URL
 
+    return try {
+      uploadToEndpoint(bitmap, endpoint, user, pass)
+    } catch (firstErr: Exception) {
+      // اگر آدرس سرور تغییر کرده بود، خودکار آخرین آدرس را از گیت‌هاب می‌گیرد و دوباره تلاش می‌کند
+      val updatedUrl = MainActivity.fetchLatestServerUrlSync(this)
+      if (updatedUrl != endpoint) {
+        uploadToEndpoint(bitmap, updatedUrl, user, pass)
+      } else {
+        throw firstErr
+      }
+    }
+  }
+
+  private fun uploadToEndpoint(bitmap: Bitmap, endpoint: String, user: String, pass: String): String {
     val imageBytes = ByteArrayOutputStream().use { stream ->
       bitmap.compress(Bitmap.CompressFormat.JPEG, 90, stream)
       stream.toByteArray()
@@ -281,12 +358,11 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
         collectEditableNodes(r, allEditables)
       }
 
-      val captchaKeywords = listOf("کد", "امنیت", "تصویر", "کپچا", "captcha", "security", "code", "verify")
       val bestMatches = allEditables.sortedByDescending { node ->
         val meta = "${node.hintText ?: ""} ${node.text ?: ""} ${node.contentDescription ?: ""} ${node.viewIdResourceName ?: ""}".lowercase()
         var score = 0
         if (node.isFocused || node.isAccessibilityFocused) score += 100
-        if (captchaKeywords.any { meta.contains(it) }) score += 50
+        if (CAPTCHA_INDICATORS.any { meta.contains(it) }) score += 50
         if (!node.isPassword) score += 20
         if (node.text.isNullOrBlank()) score += 10
         score
@@ -355,13 +431,22 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
       AccessibilityEvent.TYPE_VIEW_ACCESSIBILITY_FOCUSED,
       AccessibilityEvent.TYPE_VIEW_CLICKED,
       AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED -> {
-        val source = event.source ?: return
-        try {
-          if (isNodeEditable(source)) {
-            lastKnownEditableNode = source
-          }
-        } catch (_: Exception) { }
+        val source = event.source
+        if (source != null) {
+          try {
+            if (isNodeEditable(source)) {
+              lastKnownEditableNode = source
+            }
+          } catch (_: Exception) { }
+        }
       }
+    }
+
+    // بررسی هوشمند صفحه برای نمایش یا مخفی کردن دکمه شناور (حداکثر هر ۸۰۰ میلی‌ثانیه یک‌بار)
+    val now = System.currentTimeMillis()
+    if (now - lastScreenScanTime > 800) {
+      lastScreenScanTime = now
+      updateFloatingButtonVisibility()
     }
   }
 
@@ -369,9 +454,16 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
 
   companion object {
     private const val SUCCESS_PREFIX = "__CAPTCHA_SUCCESS__:"
+    private val CAPTCHA_INDICATORS = listOf(
+      "کد امنیتی", "تصویر امنیتی", "کپچا", "عبارت امنیتی", "کد تصویر", "کد روبرو", "کد مقابل",
+      "captcha", "security code", "verification code", "verify code", "enter the code"
+    )
   }
 
   override fun onDestroy() {
+    try {
+      a11yButtonCallback?.let { accessibilityButtonController?.unregisterAccessibilityButtonCallback(it) }
+    } catch (_: Exception) { }
     try { floatingButton?.let { windowManager?.removeView(it) } } catch (_: Exception) { }
     floatingButton = null
     worker.shutdownNow()
