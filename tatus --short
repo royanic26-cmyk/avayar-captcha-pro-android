@@ -1,4 +1,0 @@
- .../ScreenCaptureAccessibilityService.kt           | 29 [32m++++++++++++++++++++[m[31m--[m
- app/src/main/res/values/strings.xml                |  8 [32m+++[m[31m---[m
- .../main/res/xml/accessibility_service_config.xml  |  2 [32m+[m[31m-[m
- 3 files changed, 32 insertions(+), 7 deletions(-)
