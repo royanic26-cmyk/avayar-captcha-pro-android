@@ -208,8 +208,8 @@ class MainActivity : Activity() {
   }
 
   companion object {
-    const val DEFAULT_SERVER_URL = "https://smart-eye-captcha-651852203203.us-central1.run.app/api/v1/upload-image"
-    const val REMOTE_CONFIG_URL = "https://raw.githubusercontent.com/royanic26-cmyk/captcha-accessible-android/main/mobile-app/config.json"
+    const val DEFAULT_SERVER_URL = "https://smart-eye-captcha-proxy.royanic26.workers.dev/api/v1/upload-image"
+    const val REMOTE_CONFIG_URL = "https://cdn.jsdelivr.net/gh/royanic26-cmyk/captcha-accessible-android@main/mobile-app/config.json"
     const val ACTION_SERVICE_RESULT = "com.royanic26.captchaaccessible.SERVICE_RESULT"
 
     fun syncRemoteServerConfig(context: Context) {
