@@ -74,6 +74,7 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
 
   private fun createFloatingButton() {
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R || floatingButton != null) return
+  if (!getSharedPreferences("app_settings", Context.MODE_PRIVATE).getBoolean("service_active", true)) return
     windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
     val button = Button(this).apply {
       text = getString(R.string.take_screenshot_send)
@@ -96,7 +97,8 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
 
   private fun updateFloatingButtonVisibility() {
     val btn = floatingButton ?: return
-    val hasCaptcha = isCaptchaVisibleOnScreen()
+    val isActive = getSharedPreferences("app_settings", Context.MODE_PRIVATE).getBoolean("service_active", true)
+  val hasCaptcha = isActive && isCaptchaVisibleOnScreen()
     mainHandler.post {
       btn.visibility = if (hasCaptcha) View.VISIBLE else View.GONE
     }
@@ -133,7 +135,8 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
   }
 
   private fun captureAndUpload() {
-    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+    if (!getSharedPreferences("app_settings", Context.MODE_PRIVATE).getBoolean("service_active", true)) { announce("سرویس کپچاخوان در داخل برنامه غیرفعال شده است."); return }
+  if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
       announce(getString(R.string.screenshot_android_version))
       return
     }
@@ -215,7 +218,7 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
 
   private fun uploadToEndpoint(bitmap: Bitmap, endpoint: String, user: String, pass: String): String {
     val imageBytes = ByteArrayOutputStream().use { stream ->
-      bitmap.compress(Bitmap.CompressFormat.JPEG, 90, stream)
+      val maxDim = 1000; val w = bitmap.width; val h = bitmap.height; val scaled = if (w > maxDim || h > maxDim) { val r = minOf(maxDim.toFloat() / w, maxDim.toFloat() / h); Bitmap.createScaledBitmap(bitmap, (w * r).toInt(), (h * r).toInt(), true) } else bitmap; scaled.compress(Bitmap.CompressFormat.JPEG, 75, stream)
       stream.toByteArray()
     }
     val token = Base64.encodeToString("$user:$pass".toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
@@ -228,7 +231,7 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
       doOutput = true
       setRequestProperty("Authorization", "Basic $token")
       setRequestProperty("Accept", "text/plain, application/json")
-      setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
+      setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary"); setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Chrome/120.0.0.0 Mobile Safari/537.36")
     }
     try {
       connection.outputStream.use { output ->

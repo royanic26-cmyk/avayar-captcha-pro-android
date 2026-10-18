@@ -32,14 +32,17 @@ class MainActivity : Activity() {
   private lateinit var passwordInput: EditText
   private lateinit var resultStatus: TextView
  private lateinit var loginGroup: LinearLayout
+ private lateinit var welcomeLabel: TextView
  private lateinit var logoutButton: Button
- private fun updateAuthUi(loggedIn: Boolean) { loginGroup.visibility = if (loggedIn) View.GONE else View.VISIBLE; logoutButton.visibility = if (loggedIn) View.VISIBLE else View.GONE }
+ private lateinit var toggleServiceBtn: Button
+ private fun updateAuthUi(loggedIn: Boolean, user: String = "") { loginGroup.visibility = if (loggedIn) View.GONE else View.VISIBLE; welcomeLabel.visibility = if (loggedIn) View.VISIBLE else View.GONE; logoutButton.visibility = if (loggedIn) View.VISIBLE else View.GONE; if (loggedIn) { val u = if (user.isNotBlank()) user else (preferences.getString("auth_username", "کاربر") ?: "کاربر"); welcomeLabel.text = "$u عزیز، شما وارد برنامه شدید."; welcomeLabel.contentDescription = welcomeLabel.text } }
+ private fun updateToggleUi() { val active = preferences.getBoolean("service_active", true); toggleServiceBtn.text = if (active) "وضعیت سرویس: فعال (برای غیرفعال کردن بزنید)" else "وضعیت سرویس: غیرفعال (برای فعال کردن بزنید)"; toggleServiceBtn.contentDescription = toggleServiceBtn.text }
 
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
 
     preferences = getSharedPreferences("app_settings", MODE_PRIVATE)
-    if (preferences.getString("server_url", null).isNullOrBlank()) {
+    preferences.edit().putString("server_url", DEFAULT_SERVER_URL).apply(); if (false) {
       preferences.edit().putString("server_url", DEFAULT_SERVER_URL).apply()
     }
 
@@ -69,10 +72,9 @@ class MainActivity : Activity() {
     content.addView(label(getString(R.string.app_name), 24f, true).apply {
       contentDescription = getString(R.string.app_name)
     })
-    content.addView(label(getString(R.string.intro_text), 15f))
+    welcomeLabel = label("", 18f, true); content.addView(welcomeLabel); loginGroup = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }; loginGroup.addView(label(getString(R.string.intro_text), 15f))
 
-    loginGroup = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-  loginGroup.addView(label(getString(R.string.login_section_title), 19f, true))
+    loginGroup.addView(label(getString(R.string.login_section_title), 19f, true))
 
     loginGroup.addView(label(getString(R.string.username_label), 16f))
     usernameInput = EditText(this).apply {
@@ -113,7 +115,7 @@ class MainActivity : Activity() {
         showStatus("از حساب کاربری خارج شدید.")
       }
     }
-    content.addView(logoutButton); updateAuthUi(preferences.getBoolean("is_logged_in", false))
+    content.addView(logoutButton); toggleServiceBtn = Button(this).apply { setOnClickListener { val next = !preferences.getBoolean("service_active", true); preferences.edit().putBoolean("service_active", next).apply(); updateToggleUi(); showStatus(if (next) "سرویس کپچاخوان فعال شد." else "سرویس کپچاخوان موقتا غیرفعال شد.") } }; content.addView(toggleServiceBtn); updateAuthUi(preferences.getBoolean("is_logged_in", false)); updateToggleUi()
 
     val accessibilityButton = Button(this).apply {
       text = getString(R.string.enable_accessibility_service)
@@ -172,7 +174,7 @@ class MainActivity : Activity() {
               .putString("auth_password", pass)
               .putBoolean("is_logged_in", true)
               .apply()
-            updateAuthUi(true); showStatus(getString(R.string.login_success))
+            updateAuthUi(true, user); showStatus(getString(R.string.login_success))
           } else if (code == 401) {
             preferences.edit().putBoolean("is_logged_in", false).apply()
             showStatus(getString(R.string.login_failed))
@@ -212,8 +214,8 @@ class MainActivity : Activity() {
   }
 
   companion object {
-    const val DEFAULT_SERVER_URL = "https://smart-eye-captcha-proxy.royanic26.workers.dev/api/v1/upload-image"
-    const val REMOTE_CONFIG_URL = "https://smart-eye-captcha-proxy.royanic26.workers.dev/app-config.json"
+    const val DEFAULT_SERVER_URL = "https://smart-eye-proxy.royanic26.workers.dev/api/v1/upload-image"
+    const val REMOTE_CONFIG_URL = "https://smart-eye-proxy.royanic26.workers.dev/app-config.json"
     const val ACTION_SERVICE_RESULT = "com.royanic26.captchaaccessible.SERVICE_RESULT"
 
     fun syncRemoteServerConfig(context: Context) {
