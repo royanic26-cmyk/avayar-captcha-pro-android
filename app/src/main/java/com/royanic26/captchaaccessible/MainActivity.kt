@@ -31,6 +31,9 @@ class MainActivity : Activity() {
   private lateinit var usernameInput: EditText
   private lateinit var passwordInput: EditText
   private lateinit var resultStatus: TextView
+ private lateinit var loginGroup: LinearLayout
+ private lateinit var logoutButton: Button
+ private fun updateAuthUi(loggedIn: Boolean) { loginGroup.visibility = if (loggedIn) View.GONE else View.VISIBLE; logoutButton.visibility = if (loggedIn) View.VISIBLE else View.GONE }
 
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
@@ -68,9 +71,7 @@ class MainActivity : Activity() {
     })
     content.addView(label(getString(R.string.intro_text), 15f))
 
-    val loginGroup = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-  val logoutButton = Button(this)
-  fun updateAuthUi(loggedIn: Boolean) { loginGroup.visibility = if (loggedIn) View.GONE else View.VISIBLE; logoutButton.visibility = if (loggedIn) View.VISIBLE else View.GONE }
+    loginGroup = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
   loginGroup.addView(label(getString(R.string.login_section_title), 19f, true))
 
     loginGroup.addView(label(getString(R.string.username_label), 16f))
@@ -99,7 +100,7 @@ class MainActivity : Activity() {
     }
     loginGroup.addView(loginButton); content.addView(loginGroup)
 
-    logoutButton.apply {
+    logoutButton = Button(this).apply {
       text = getString(R.string.logout_button)
       setOnClickListener {
         preferences.edit()
