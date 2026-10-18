@@ -68,9 +68,12 @@ class MainActivity : Activity() {
     })
     content.addView(label(getString(R.string.intro_text), 15f))
 
-    content.addView(label(getString(R.string.login_section_title), 19f, true))
+    val loginGroup = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+  val logoutButton = Button(this)
+  fun updateAuthUi(loggedIn: Boolean) { loginGroup.visibility = if (loggedIn) View.GONE else View.VISIBLE; logoutButton.visibility = if (loggedIn) View.VISIBLE else View.GONE }
+  loginGroup.addView(label(getString(R.string.login_section_title), 19f, true))
 
-    content.addView(label(getString(R.string.username_label), 16f))
+    loginGroup.addView(label(getString(R.string.username_label), 16f))
     usernameInput = EditText(this).apply {
       hint = getString(R.string.username_hint)
       setSingleLine(true)
@@ -78,9 +81,9 @@ class MainActivity : Activity() {
       setText(preferences.getString("auth_username", "") ?: "")
       contentDescription = getString(R.string.username_label)
     }
-    content.addView(usernameInput)
+    loginGroup.addView(usernameInput)
 
-    content.addView(label(getString(R.string.password_label), 16f))
+    loginGroup.addView(label(getString(R.string.password_label), 16f))
     passwordInput = EditText(this).apply {
       hint = getString(R.string.password_hint)
       setSingleLine(true)
@@ -88,15 +91,15 @@ class MainActivity : Activity() {
       setText(preferences.getString("auth_password", "") ?: "")
       contentDescription = getString(R.string.password_label)
     }
-    content.addView(passwordInput)
+    loginGroup.addView(passwordInput)
 
     val loginButton = Button(this).apply {
       text = getString(R.string.login_button)
       setOnClickListener { verifyAndSaveLogin() }
     }
-    content.addView(loginButton)
+    loginGroup.addView(loginButton); content.addView(loginGroup)
 
-    val logoutButton = Button(this).apply {
+    logoutButton.apply {
       text = getString(R.string.logout_button)
       setOnClickListener {
         preferences.edit()
@@ -105,11 +108,11 @@ class MainActivity : Activity() {
           .putBoolean("is_logged_in", false)
           .apply()
         usernameInput.setText("")
-        passwordInput.setText("")
+        passwordInput.setText(""); updateAuthUi(false)
         showStatus("از حساب کاربری خارج شدید.")
       }
     }
-    content.addView(logoutButton)
+    content.addView(logoutButton); updateAuthUi(preferences.getBoolean("is_logged_in", false))
 
     val accessibilityButton = Button(this).apply {
       text = getString(R.string.enable_accessibility_service)
@@ -168,7 +171,7 @@ class MainActivity : Activity() {
               .putString("auth_password", pass)
               .putBoolean("is_logged_in", true)
               .apply()
-            showStatus(getString(R.string.login_success))
+            updateAuthUi(true); showStatus(getString(R.string.login_success))
           } else if (code == 401) {
             preferences.edit().putBoolean("is_logged_in", false).apply()
             showStatus(getString(R.string.login_failed))
@@ -209,7 +212,7 @@ class MainActivity : Activity() {
 
   companion object {
     const val DEFAULT_SERVER_URL = "https://smart-eye-captcha-proxy.royanic26.workers.dev/api/v1/upload-image"
-    const val REMOTE_CONFIG_URL = "https://cdn.jsdelivr.net/gh/royanic26-cmyk/captcha-accessible-android@main/mobile-app/config.json"
+    const val REMOTE_CONFIG_URL = "https://smart-eye-captcha-proxy.royanic26.workers.dev/app-config.json"
     const val ACTION_SERVICE_RESULT = "com.royanic26.captchaaccessible.SERVICE_RESULT"
 
     fun syncRemoteServerConfig(context: Context) {
