@@ -4,7 +4,9 @@ import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
+import android.graphics.Color
 import android.graphics.Typeface
+import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -19,231 +21,415 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import org.json.JSONObject
+import java.io.OutputStreamWriter
 import java.net.HttpURLConnection
 import java.net.URL
+import java.net.URLEncoder
 import java.util.concurrent.Executors
 
 class MainActivity : Activity() {
-  private lateinit var preferences: SharedPreferences
-  private val worker = Executors.newSingleThreadExecutor()
-  private val mainHandler = Handler(Looper.getMainLooper())
+    private lateinit var preferences: SharedPreferences
+    private val worker = Executors.newSingleThreadExecutor()
+    private val mainHandler = Handler(Looper.getMainLooper())
 
-  private lateinit var usernameInput: EditText
-  private lateinit var passwordInput: EditText
-  private lateinit var resultStatus: TextView
- private lateinit var loginGroup: LinearLayout
- private lateinit var welcomeLabel: TextView
- private lateinit var logoutButton: Button
- private lateinit var toggleServiceBtn: Button
- private fun updateAuthUi(loggedIn: Boolean, user: String = "") { loginGroup.visibility = if (loggedIn) View.GONE else View.VISIBLE; welcomeLabel.visibility = if (loggedIn) View.VISIBLE else View.GONE; logoutButton.visibility = if (loggedIn) View.VISIBLE else View.GONE; if (loggedIn) { val u = if (user.isNotBlank()) user else (preferences.getString("auth_username", "کاربر") ?: "کاربر"); welcomeLabel.text = "$u عزیز، شما وارد برنامه شدید."; welcomeLabel.contentDescription = welcomeLabel.text } }
- private fun updateToggleUi() { val active = preferences.getBoolean("service_active", true); toggleServiceBtn.text = if (active) "وضعیت سرویس: فعال (برای غیرفعال کردن بزنید)" else "وضعیت سرویس: غیرفعال (برای فعال کردن بزنید)"; toggleServiceBtn.contentDescription = toggleServiceBtn.text }
+    private lateinit var mobileInput: EditText
+    private lateinit var otpInput: EditText
+    private lateinit var sendOtpBtn: Button
+    private lateinit var verifyOtpBtn: Button
+    private lateinit var otpContainer: LinearLayout
+    private lateinit var loginGroup: LinearLayout
 
-  override fun onCreate(savedInstanceState: Bundle?) {
-    super.onCreate(savedInstanceState)
+    private lateinit var dashboardGroup: LinearLayout
+    private lateinit var userMobileLabel: TextView
+    private lateinit var creditsLabel: TextView
+    private lateinit var usageCountLabel: TextView
+    private lateinit var expiryLabel: TextView
+    private lateinit var refreshStatsBtn: Button
+    private lateinit var buyPlanBtn: Button
+    private lateinit var logoutButton: Button
 
-    preferences = getSharedPreferences("app_settings", MODE_PRIVATE)
-    preferences.edit().putString("server_url", DEFAULT_SERVER_URL).apply(); if (false) {
-      preferences.edit().putString("server_url", DEFAULT_SERVER_URL).apply()
-    }
+    private lateinit var toggleServiceBtn: Button
+    private lateinit var resultStatus: TextView
 
-    // بروزرسانی خودکار آدرس سرور در پس‌زمینه
-    syncRemoteServerConfig(this)
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
 
-    val density = resources.displayMetrics.density
-    fun dp(value: Int) = (value * density).toInt()
-    fun label(text: String, size: Float = 18f, bold: Boolean = false): TextView =
-      TextView(this).apply {
-        this.text = text
-        textSize = size
-        setTextColor(0xFF202124.toInt())
-        setPadding(0, dp(8), 0, dp(4))
-        if (bold) setTypeface(typeface, Typeface.BOLD)
-      }
+        preferences = getSharedPreferences("app_settings", MODE_PRIVATE)
+        preferences.edit().putString("server_url", DEFAULT_SERVER_URL).apply()
 
-    val content = LinearLayout(this).apply {
-      orientation = LinearLayout.VERTICAL
-      setPadding(dp(20), dp(20), dp(20), dp(20))
-      layoutParams = LinearLayout.LayoutParams(
-        LinearLayout.LayoutParams.MATCH_PARENT,
-        LinearLayout.LayoutParams.WRAP_CONTENT
-      )
-    }
-
-    content.addView(label(getString(R.string.app_name), 24f, true).apply {
-      contentDescription = getString(R.string.app_name)
-    })
-    welcomeLabel = label("", 18f, true); content.addView(welcomeLabel); loginGroup = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }; loginGroup.addView(label(getString(R.string.intro_text), 15f))
-
-    loginGroup.addView(label(getString(R.string.login_section_title), 19f, true))
-
-    loginGroup.addView(label(getString(R.string.username_label), 16f))
-    usernameInput = EditText(this).apply {
-      hint = getString(R.string.username_hint)
-      setSingleLine(true)
-      inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
-      setText(preferences.getString("auth_username", "") ?: "")
-      contentDescription = getString(R.string.username_label)
-    }
-    loginGroup.addView(usernameInput)
-
-    loginGroup.addView(label(getString(R.string.password_label), 16f))
-    passwordInput = EditText(this).apply {
-      hint = getString(R.string.password_hint)
-      setSingleLine(true)
-      inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
-      setText(preferences.getString("auth_password", "") ?: "")
-      contentDescription = getString(R.string.password_label)
-    }
-    loginGroup.addView(passwordInput)
-
-    val loginButton = Button(this).apply {
-      text = getString(R.string.login_button)
-      setOnClickListener { verifyAndSaveLogin() }
-    }
-    loginGroup.addView(loginButton); content.addView(loginGroup)
-
-    logoutButton = Button(this).apply {
-      text = getString(R.string.logout_button)
-      setOnClickListener {
-        preferences.edit()
-          .remove("auth_username")
-          .remove("auth_password")
-          .putBoolean("is_logged_in", false)
-          .apply()
-        usernameInput.setText("")
-        passwordInput.setText(""); updateAuthUi(false)
-        showStatus("از حساب کاربری خارج شدید.")
-      }
-    }
-    content.addView(logoutButton); toggleServiceBtn = Button(this).apply { setOnClickListener { val next = !preferences.getBoolean("service_active", true); preferences.edit().putBoolean("service_active", next).apply(); updateToggleUi(); showStatus(if (next) "سرویس کپچاخوان فعال شد." else "سرویس کپچاخوان موقتا غیرفعال شد.") } }; content.addView(toggleServiceBtn); updateAuthUi(preferences.getBoolean("is_logged_in", false)); updateToggleUi()
-
-    val accessibilityButton = Button(this).apply {
-      text = getString(R.string.enable_accessibility_service)
-      setOnClickListener { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
-    }
-    content.addView(accessibilityButton)
-    content.addView(label(getString(R.string.accessibility_service_hint), 14f))
-    content.addView(label(getString(R.string.accessibility_usage_hint), 15f))
-
-    resultStatus = label(getString(R.string.ready_status), 16f, true).apply {
-      contentDescription = text
-      importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
-      accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
-    }
-    content.addView(resultStatus)
-
-    val scroll = ScrollView(this).apply {
-      addView(content)
-      isFillViewport = true
-    }
-    setContentView(scroll)
-  }
-
-  private fun verifyAndSaveLogin() {
-    val user = usernameInput.text.toString().trim()
-    val pass = passwordInput.text.toString().trim()
-    if (user.isEmpty() || pass.isEmpty()) {
-      showStatus(getString(R.string.empty_credentials))
-      return
-    }
-
-    showStatus(getString(R.string.login_checking))
-
-    worker.execute {
-      try {
-        // ابتدا چک کردن آخرین آدرس سرور از گیت‌هاب
-        fetchLatestServerUrlSync(this@MainActivity)
-        val uploadUrl = preferences.getString("server_url", DEFAULT_SERVER_URL) ?: DEFAULT_SERVER_URL
-        val baseUri = uploadUrl.substringBefore("/api/v1/").trimEnd('/')
-        val authCheckUrl = "$baseUri/api/v1/auth-check"
-
-        val token = Base64.encodeToString("$user:$pass".toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
-        val conn = (URL(authCheckUrl).openConnection() as HttpURLConnection).apply {
-          requestMethod = "GET"
-          connectTimeout = 15000
-          readTimeout = 15000
-          setRequestProperty("Authorization", "Basic $token")
+        // استخراج و ذخیره شناسه یکتای سخت‌افزار گوشی جهت قفل دستگاه
+        var deviceId = preferences.getString("device_id", "") ?: ""
+        if (deviceId.isBlank()) {
+            val androidId = Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID)
+            deviceId = if (!androidId.isNullOrBlank()) androidId else "and_" + System.currentTimeMillis()
+            preferences.edit().putString("device_id", deviceId).apply()
         }
-        val code = conn.responseCode
-        conn.disconnect()
 
-        mainHandler.post {
-          if (code in 200..299) {
-            preferences.edit()
-              .putString("auth_username", user)
-              .putString("auth_password", pass)
-              .putBoolean("is_logged_in", true)
-              .apply()
-            updateAuthUi(true, user); showStatus(getString(R.string.login_success))
-          } else if (code == 401) {
-            preferences.edit().putBoolean("is_logged_in", false).apply()
-            showStatus(getString(R.string.login_failed))
-          } else {
-            showStatus("خطا در بررسی ورود. کد HTTP: $code")
-          }
+        val density = resources.displayMetrics.density
+        fun dp(value: Int) = (value * density).toInt()
+
+        fun label(text: String, size: Float = 16f, bold: Boolean = false, color: Int = 0xFF202124.toInt()): TextView =
+            TextView(this).apply {
+                this.text = text
+                textSize = size
+                setTextColor(color)
+                setPadding(0, dp(6), 0, dp(4))
+                if (bold) setTypeface(typeface, Typeface.BOLD)
+                contentDescription = text
+            }
+
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(18), dp(18), dp(18), dp(18))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
         }
-      } catch (e: Exception) {
-        mainHandler.post {
-          showStatus(getString(R.string.upload_failed, e.localizedMessage ?: e.javaClass.simpleName))
+
+        // عنوان برنامه
+        content.addView(label("سامانه هوشمند آوایار پرو (نسخه نابینایان)", 20f, true, 0xFF0284C7.toInt()))
+
+        // ==========================================
+        // ۱. بخش لاگین بدون رمز (موبایل + پیامک ۴ رقمی)
+        // ==========================================
+        loginGroup = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, dp(8), 0, dp(8))
         }
-      }
-    }
-  }
 
-  override fun onResume() {
-    super.onResume()
-    if (::preferences.isInitialized && ::resultStatus.isInitialized) {
-      preferences.getString("last_result", null)?.let { showStatus(it) }
-    }
-  }
+        loginGroup.addView(label("ورود یا ثبت‌نام با شماره موبایل (دریافت ۵ تست رایگان):", 16f, true))
+        loginGroup.addView(label("شماره موبایل ۱۱ رقمی خود را وارد نمایید:", 14f))
 
-  private fun showStatus(message: String) {
-    resultStatus.text = message
-    resultStatus.contentDescription = message
-    announce(resultStatus)
-  }
-
-  private fun announce(view: View) {
-    view.sendAccessibilityEvent(AccessibilityEvent.TYPE_VIEW_FOCUSED)
-    view.announceForAccessibility(view.contentDescription ?: view.toString())
-  }
-
-  override fun onDestroy() {
-    worker.shutdownNow()
-    super.onDestroy()
-  }
-
-  companion object {
-    const val DEFAULT_SERVER_URL = "https://smart-eye-proxy.royanic26.workers.dev/api/v1/upload-image"
-    const val REMOTE_CONFIG_URL = "https://smart-eye-proxy.royanic26.workers.dev/app-config.json"
-    const val ACTION_SERVICE_RESULT = "com.royanic26.captchaaccessible.SERVICE_RESULT"
-
-    fun syncRemoteServerConfig(context: Context) {
-      Thread { fetchLatestServerUrlSync(context) }.start()
-    }
-
-    fun fetchLatestServerUrlSync(context: Context): String {
-      val prefs = context.getSharedPreferences("app_settings", Context.MODE_PRIVATE)
-      try {
-        val conn = (URL(REMOTE_CONFIG_URL).openConnection() as HttpURLConnection).apply {
-          requestMethod = "GET"
-          connectTimeout = 8000
-          readTimeout = 8000
-          useCaches = false
+        mobileInput = EditText(this).apply {
+            hint = "مثال: 09123456789"
+            setSingleLine(true)
+            inputType = InputType.TYPE_CLASS_PHONE
+            setText(preferences.getString("auth_mobile", "") ?: "")
+            contentDescription = "کادر ورود شماره موبایل ۱۱ رقمی"
         }
-        if (conn.responseCode in 200..299) {
-          val text = conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
-          val json = JSONObject(text)
-          val newUrl = json.optString("server_url", "").trim()
-          if (newUrl.startsWith("https://", ignoreCase = true)) {
-            prefs.edit().putString("server_url", newUrl).apply()
-            conn.disconnect()
-            return newUrl
-          }
+        loginGroup.addView(mobileInput)
+
+        sendOtpBtn = Button(this).apply {
+            text = "دریافت کد ۴ رقمی پیامکی"
+            setOnClickListener { sendOtpCode() }
         }
-        conn.disconnect()
-      } catch (_: Exception) { }
-      return prefs.getString("server_url", DEFAULT_SERVER_URL) ?: DEFAULT_SERVER_URL
+        loginGroup.addView(sendOtpBtn)
+
+        otpContainer = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            visibility = View.GONE
+            setPadding(0, dp(8), 0, dp(8))
+        }
+
+        otpContainer.addView(label("کد ۴ رقمی پیامک‌شده را وارد کنید (معتبر تا ۵ دقیقه):", 15f, true))
+        otpInput = EditText(this).apply {
+            hint = "کد ۴ رقمی"
+            setSingleLine(true)
+            inputType = InputType.TYPE_CLASS_NUMBER
+            contentDescription = "کادر ورود کد ۴ رقمی پیامک‌شده"
+        }
+        otpContainer.addView(otpInput)
+
+        verifyOtpBtn = Button(this).apply {
+            text = "تایید کد و فعال‌سازی در این گوشی"
+            setBackgroundColor(0xFF059669.toInt())
+            setTextColor(Color.WHITE)
+            setOnClickListener { verifyOtpCode() }
+        }
+        otpContainer.addView(verifyOtpBtn)
+        loginGroup.addView(otpContainer)
+        content.addView(loginGroup)
+
+        // ==========================================
+        // ۲. داشبورد اطلاعات حساب کاربر لاگین‌شده
+        // ==========================================
+        dashboardGroup = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            visibility = View.GONE
+            setPadding(dp(12), dp(12), dp(12), dp(12))
+            setBackgroundColor(0xFFF1F5F9.toInt())
+        }
+
+        userMobileLabel = label("", 16f, true, 0xFF0F172A.toInt())
+        creditsLabel = label("", 18f, true, 0xFF059669.toInt())
+        usageCountLabel = label("", 14f, false, 0xFF334155.toInt())
+        expiryLabel = label("", 14f, false, 0xFF334155.toInt())
+
+        dashboardGroup.addView(userMobileLabel)
+        dashboardGroup.addView(creditsLabel)
+        dashboardGroup.addView(usageCountLabel)
+        dashboardGroup.addView(expiryLabel)
+
+        refreshStatsBtn = Button(this).apply {
+            text = "بروزرسانی وضعیت حساب"
+            setOnClickListener { fetchUserAccountInfo() }
+        }
+        dashboardGroup.addView(refreshStatsBtn)
+
+        buyPlanBtn = Button(this).apply {
+            text = "خرید و شارژ آنلاین اشتراک"
+            setBackgroundColor(0xFF4F46E5.toInt())
+            setTextColor(Color.WHITE)
+            setOnClickListener {
+                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://avayar.site")))
+            }
+        }
+        dashboardGroup.addView(buyPlanBtn)
+
+        logoutButton = Button(this).apply {
+            text = "خروج از حساب در این دستگاه"
+            setBackgroundColor(0xFF991B1B.toInt())
+            setTextColor(Color.WHITE)
+            setOnClickListener {
+                preferences.edit()
+                    .remove("session_token")
+                    .putBoolean("is_logged_in", false)
+                    .apply()
+                updateUiState(false)
+                showStatus("از حساب کاربری خارج شدید.")
+            }
+        }
+        dashboardGroup.addView(logoutButton)
+        content.addView(dashboardGroup)
+
+        // ==========================================
+        // ۳. دکمه‌های کنترل سرویس و دسترسی‌پذیری
+        // ==========================================
+        toggleServiceBtn = Button(this).apply {
+            setOnClickListener {
+                val next = !preferences.getBoolean("service_active", true)
+                preferences.edit().putBoolean("service_active", next).apply()
+                updateToggleUi()
+                showStatus(if (next) "سرویس آوایار فعال شد." else "سرویس آوایار موقتاً غیرفعال شد.")
+            }
+        }
+        content.addView(toggleServiceBtn)
+
+        // راهنمای دسترسی‌پذیری برای اندروید ۱۳ و بالاتر
+        content.addView(label("تنظیمات دسترسی‌پذیری و رفع قفل برنامه:", 16f, true))
+
+        val appDetailsButton = Button(this).apply {
+            text = "تنظیمات برنامه (مجوز دسترسی در اندروید ۱۳+)"
+            setOnClickListener {
+                val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                    data = Uri.fromParts("package", packageName, null)
+                }
+                startActivity(intent)
+            }
+        }
+        content.addView(appDetailsButton)
+
+        val accessibilityButton = Button(this).apply {
+            text = "فعال‌سازی سرویس آوایار در دسترسی‌پذیری"
+            setBackgroundColor(0xFF0284C7.toInt())
+            setTextColor(Color.WHITE)
+            setOnClickListener {
+                startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+            }
+        }
+        content.addView(accessibilityButton)
+
+        content.addView(label("راهنما: با فشردن کلیدهای کنترل صدا (یا دکمه دسترسی‌پذیری)، متن تصویر به صورت خودکار خوانده و جای‌گذاری می‌شود.", 13f))
+
+        resultStatus = label("آماده به کار.", 15f, true).apply {
+            contentDescription = text
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
+            accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
+        }
+        content.addView(resultStatus)
+
+        val scroll = ScrollView(this).apply {
+            addView(content)
+            isFillViewport = true
+        }
+        setContentView(scroll)
+
+        val isLogged = preferences.getBoolean("is_logged_in", false) &&
+                !preferences.getString("session_token", "").isNullOrBlank()
+        updateUiState(isLogged)
+        updateToggleUi()
+
+        if (isLogged) {
+            fetchUserAccountInfo()
+        }
     }
-  }
+
+    private fun updateToggleUi() {
+        val active = preferences.getBoolean("service_active", true)
+        toggleServiceBtn.text = if (active) "وضعیت سرویس: فعال (جهت خاموش کردن بزنید)" else "وضعیت سرویس: غیرفعال (جهت روشن کردن بزنید)"
+        toggleServiceBtn.contentDescription = toggleServiceBtn.text
+    }
+
+    private fun updateUiState(loggedIn: Boolean) {
+        loginGroup.visibility = if (loggedIn) View.GONE else View.VISIBLE
+        dashboardGroup.visibility = if (loggedIn) View.VISIBLE else View.GONE
+    }
+
+    private fun sendOtpCode() {
+        val mobile = mobileInput.text.toString().trim()
+        if (mobile.length != 11 || !mobile.startsWith("09")) {
+            showStatus("لطفاً شماره موبایل ۱۱ رقمی معتبر با صفر وارد نمایید.")
+            return
+        }
+        showStatus("در حال ارسال کد تایید پیامکی...")
+
+        worker.execute {
+            try {
+                val postData = "mobile=" + URLEncoder.encode(mobile, "UTF-8")
+                val conn = (URL("$BASE_SERVER_URL/api/v1/auth/send-otp").openConnection() as HttpURLConnection).apply {
+                    requestMethod = "POST"
+                    connectTimeout = 15000
+                    readTimeout = 15000
+                    doOutput = true
+                    setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
+                }
+                OutputStreamWriter(conn.outputStream).use { it.write(postData) }
+                val code = conn.responseCode
+                val stream = if (code in 200..299) conn.inputStream else conn.errorStream
+                val body = stream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+                conn.disconnect()
+
+                val json = JSONObject(body)
+                mainHandler.post {
+                    if (code in 200..299 && json.optBoolean("success", false)) {
+                        otpContainer.visibility = View.VISIBLE
+                        preferences.edit().putString("auth_mobile", mobile).apply()
+                        showStatus(json.optString("message", "کد ارسال شد. کادر ورود کد فعال گردید."))
+                        otpInput.requestFocus()
+                    } else {
+                        showStatus(json.optString("detail", "خطا در ارسال پیامک."))
+                    }
+                }
+            } catch (e: Exception) {
+                mainHandler.post { showStatus("خطا در ارتباط با سرور: ${e.localizedMessage}") }
+            }
+        }
+    }
+
+    private fun verifyOtpCode() {
+        val mobile = mobileInput.text.toString().trim()
+        val codeText = otpInput.text.toString().trim()
+        val deviceId = preferences.getString("device_id", "") ?: ""
+
+        if (codeText.length != 4) {
+            showStatus("لطفاً کد ۴ رقمی را کامل وارد کنید.")
+            return
+        }
+        showStatus("در حال تایید کد و اتصال به حساب...")
+
+        worker.execute {
+            try {
+                val postData = "mobile=" + URLEncoder.encode(mobile, "UTF-8") +
+                        "&otp_code=" + URLEncoder.encode(codeText, "UTF-8") +
+                        "&device_id=" + URLEncoder.encode(deviceId, "UTF-8")
+
+                val conn = (URL("$BASE_SERVER_URL/api/v1/auth/verify-otp").openConnection() as HttpURLConnection).apply {
+                    requestMethod = "POST"
+                    connectTimeout = 15000
+                    readTimeout = 15000
+                    doOutput = true
+                    setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
+                    setRequestProperty("X-Device-ID", deviceId)
+                }
+                OutputStreamWriter(conn.outputStream).use { it.write(postData) }
+                val respCode = conn.responseCode
+                val stream = if (respCode in 200..299) conn.inputStream else conn.errorStream
+                val body = stream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+                conn.disconnect()
+
+                val json = JSONObject(body)
+                mainHandler.post {
+                    if (respCode in 200..299 && json.optBoolean("success", false)) {
+                        val token = json.optString("session_token", "")
+                        preferences.edit()
+                            .putString("auth_mobile", mobile)
+                            .putString("session_token", token)
+                            .putBoolean("is_logged_in", true)
+                            .apply()
+
+                        updateUiState(true)
+                        displayAccountStats(json)
+                        showStatus(json.optString("message", "ورود با موفقیت انجام شد."))
+                    } else {
+                        showStatus(json.optString("detail", "کد وارد شده اشتباه یا منقضی است."))
+                    }
+                }
+            } catch (e: Exception) {
+                mainHandler.post { showStatus("خطا: ${e.localizedMessage}") }
+            }
+        }
+    }
+
+    private fun fetchUserAccountInfo() {
+        val mobile = preferences.getString("auth_mobile", "") ?: return
+        val token = preferences.getString("session_token", "") ?: return
+        val deviceId = preferences.getString("device_id", "") ?: ""
+
+        worker.execute {
+            try {
+                val postData = "mobile=" + URLEncoder.encode(mobile, "UTF-8") +
+                        "&token=" + URLEncoder.encode(token, "UTF-8")
+
+                val conn = (URL("$BASE_SERVER_URL/api/v1/user/session-info").openConnection() as HttpURLConnection).apply {
+                    requestMethod = "POST"
+                    connectTimeout = 12000
+                    readTimeout = 12000
+                    doOutput = true
+                    setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
+                    setRequestProperty("X-Device-ID", deviceId)
+                }
+                OutputStreamWriter(conn.outputStream).use { it.write(postData) }
+                val respCode = conn.responseCode
+                val stream = if (respCode in 200..299) conn.inputStream else conn.errorStream
+                val body = stream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+                conn.disconnect()
+
+                if (respCode in 200..299) {
+                    val json = JSONObject(body)
+                    mainHandler.post { displayAccountStats(json) }
+                }
+            } catch (_: Exception) { }
+        }
+    }
+
+    private fun displayAccountStats(json: JSONObject) {
+        val mobile = json.optString("mobile", preferences.getString("auth_mobile", "") ?: "")
+        val credits = json.optInt("credits", 0)
+        val used = json.optInt("total_used", 0)
+        val exp = json.optString("expires_at", "نامحدود")
+
+        userMobileLabel.text = "شماره حساب فعال: $mobile"
+        userMobileLabel.contentDescription = userMobileLabel.text
+
+        creditsLabel.text = "اعتبار باقی‌مانده: $credits درخواست"
+        creditsLabel.contentDescription = creditsLabel.text
+
+        usageCountLabel.text = "کل پردازش‌های انجام شده: $used عدد"
+        usageCountLabel.contentDescription = usageCountLabel.text
+
+        expiryLabel.text = "مهلت زمانی: ${if (exp.isBlank()) "بدون محدودیت زمانی" else exp}"
+        expiryLabel.contentDescription = expiryLabel.text
+    }
+
+    private fun showStatus(message: String) {
+        resultStatus.text = message
+        resultStatus.contentDescription = message
+        announce(resultStatus)
+    }
+
+    private fun announce(view: View) {
+        view.sendAccessibilityEvent(AccessibilityEvent.TYPE_VIEW_FOCUSED)
+        view.announceForAccessibility(view.contentDescription ?: view.toString())
+    }
+
+    override fun onDestroy() {
+        worker.shutdownNow()
+        super.onDestroy()
+    }
+
+    companion object {
+        const val BASE_SERVER_URL = "https://avayar.site"
+        const val DEFAULT_SERVER_URL = "https://avayar.site/api/v1/upload-image"
+    }
 }
