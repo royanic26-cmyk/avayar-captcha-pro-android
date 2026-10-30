@@ -1,6 +1,7 @@
 package com.royanic26.captchaaccessible
 
 import android.app.Activity
+import android.app.AlertDialog
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
@@ -12,7 +13,6 @@ import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
 import android.text.InputType
-import android.util.Base64
 import android.view.View
 import android.view.accessibility.AccessibilityEvent
 import android.widget.Button
@@ -44,7 +44,6 @@ class MainActivity : Activity() {
     private lateinit var creditsLabel: TextView
     private lateinit var usageCountLabel: TextView
     private lateinit var expiryLabel: TextView
-    private lateinit var refreshStatsBtn: Button
     private lateinit var buyPlanBtn: Button
     private lateinit var logoutButton: Button
 
@@ -53,11 +52,11 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        title = "آوایار کپچاپرو"
 
         preferences = getSharedPreferences("app_settings", MODE_PRIVATE)
         preferences.edit().putString("server_url", DEFAULT_SERVER_URL).apply()
 
-        // استخراج و ذخیره شناسه یکتای سخت‌افزار گوشی جهت قفل دستگاه
         var deviceId = preferences.getString("device_id", "") ?: ""
         if (deviceId.isBlank()) {
             val androidId = Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID)
@@ -87,18 +86,15 @@ class MainActivity : Activity() {
             )
         }
 
-        // عنوان برنامه
-        content.addView(label("سامانه هوشمند آوایار پرو (نسخه نابینایان)", 20f, true, 0xFF0284C7.toInt()))
+        content.addView(label("آوایار کپچاپرو", 22f, true, 0xFF0284C7.toInt()))
 
-        // ==========================================
-        // ۱. بخش لاگین بدون رمز (موبایل + پیامک ۴ رقمی)
-        // ==========================================
+        // بخش ورود و ثبت‌نام پیامکی
         loginGroup = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(0, dp(8), 0, dp(8))
         }
 
-        loginGroup.addView(label("ورود یا ثبت‌نام با شماره موبایل (دریافت ۵ تست رایگان):", 16f, true))
+        loginGroup.addView(label("ورود یا ثبت‌نام با شماره موبایل (سهمیه تست رایگان):", 16f, true))
         loginGroup.addView(label("شماره موبایل ۱۱ رقمی خود را وارد نمایید:", 14f))
 
         mobileInput = EditText(this).apply {
@@ -141,13 +137,11 @@ class MainActivity : Activity() {
         loginGroup.addView(otpContainer)
         content.addView(loginGroup)
 
-        // ==========================================
-        // ۲. داشبورد اطلاعات حساب کاربر لاگین‌شده
-        // ==========================================
+        // داشبورد وضعیت حساب کاربر
         dashboardGroup = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             visibility = View.GONE
-            setPadding(dp(12), dp(12), dp(12), dp(12))
+            setPadding(dp(14), dp(14), dp(14), dp(14))
             setBackgroundColor(0xFFF1F5F9.toInt())
         }
 
@@ -161,18 +155,21 @@ class MainActivity : Activity() {
         dashboardGroup.addView(usageCountLabel)
         dashboardGroup.addView(expiryLabel)
 
-        refreshStatsBtn = Button(this).apply {
-            text = "بروزرسانی وضعیت حساب"
-            setOnClickListener { fetchUserAccountInfo() }
-        }
-        dashboardGroup.addView(refreshStatsBtn)
-
+        // دکمه انتقال مستقیم و بدون لاگین به درگاه خرید سایت
         buyPlanBtn = Button(this).apply {
             text = "خرید و شارژ آنلاین اشتراک"
             setBackgroundColor(0xFF4F46E5.toInt())
             setTextColor(Color.WHITE)
             setOnClickListener {
-                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://avayar.site")))
+                val mobile = preferences.getString("auth_mobile", "").orEmpty()
+                val token = preferences.getString("session_token", "").orEmpty()
+                val buyUrl = if (mobile.isNotBlank() && token.isNotBlank()) {
+                    "$BASE_SERVER_URL/?mobile=" + URLEncoder.encode(mobile, "UTF-8") +
+                            "&token=" + URLEncoder.encode(token, "UTF-8") + "&from=app"
+                } else {
+                    BASE_SERVER_URL
+                }
+                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(buyUrl)))
             }
         }
         dashboardGroup.addView(buyPlanBtn)
@@ -181,21 +178,12 @@ class MainActivity : Activity() {
             text = "خروج از حساب در این دستگاه"
             setBackgroundColor(0xFF991B1B.toInt())
             setTextColor(Color.WHITE)
-            setOnClickListener {
-                preferences.edit()
-                    .remove("session_token")
-                    .putBoolean("is_logged_in", false)
-                    .apply()
-                updateUiState(false)
-                showStatus("از حساب کاربری خارج شدید.")
-            }
+            setOnClickListener { showLogoutConfirmationDialog() }
         }
         dashboardGroup.addView(logoutButton)
         content.addView(dashboardGroup)
 
-        // ==========================================
-        // ۳. دکمه‌های کنترل سرویس و دسترسی‌پذیری
-        // ==========================================
+        // دکمه‌های کنترل سرویس و دسترسی‌پذیری
         toggleServiceBtn = Button(this).apply {
             setOnClickListener {
                 val next = !preferences.getBoolean("service_active", true)
@@ -206,8 +194,11 @@ class MainActivity : Activity() {
         }
         content.addView(toggleServiceBtn)
 
-        // راهنمای دسترسی‌پذیری برای اندروید ۱۳ و بالاتر
-        content.addView(label("تنظیمات دسترسی‌پذیری و رفع قفل برنامه:", 16f, true))
+        val guideButton = Button(this).apply {
+            text = "📖 راهنمای استفاده از برنامه"
+            setOnClickListener { showHelpDialog() }
+        }
+        content.addView(guideButton)
 
         val appDetailsButton = Button(this).apply {
             text = "تنظیمات برنامه (مجوز دسترسی در اندروید ۱۳+)"
@@ -230,12 +221,11 @@ class MainActivity : Activity() {
         }
         content.addView(accessibilityButton)
 
-        content.addView(label("راهنما: با فشردن کلیدهای کنترل صدا (یا دکمه دسترسی‌پذیری)، متن تصویر به صورت خودکار خوانده و جای‌گذاری می‌شود.", 13f))
-
-        resultStatus = label("آماده به کار.", 15f, true).apply {
+        resultStatus = label("", 15f, true).apply {
             contentDescription = text
             importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
             accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
+            visibility = View.GONE
         }
         content.addView(resultStatus)
 
@@ -249,7 +239,12 @@ class MainActivity : Activity() {
                 !preferences.getString("session_token", "").isNullOrBlank()
         updateUiState(isLogged)
         updateToggleUi()
+    }
 
+    override fun onResume() {
+        super.onResume()
+        val isLogged = preferences.getBoolean("is_logged_in", false) &&
+                !preferences.getString("session_token", "").isNullOrBlank()
         if (isLogged) {
             fetchUserAccountInfo()
         }
@@ -264,6 +259,46 @@ class MainActivity : Activity() {
     private fun updateUiState(loggedIn: Boolean) {
         loginGroup.visibility = if (loggedIn) View.GONE else View.VISIBLE
         dashboardGroup.visibility = if (loggedIn) View.VISIBLE else View.GONE
+    }
+
+    private fun showLogoutConfirmationDialog() {
+        AlertDialog.Builder(this)
+            .setTitle("تایید خروج")
+            .setMessage("آیا از خروج از حساب کاربری در این دستگاه اطمینان دارید؟")
+            .setPositiveButton("بله، خارج شو") { _, _ ->
+                preferences.edit()
+                    .remove("session_token")
+                    .putBoolean("is_logged_in", false)
+                    .apply()
+                otpInput.setText("")
+                otpContainer.visibility = View.GONE
+                updateUiState(false)
+                showStatus("از حساب کاربری خارج شدید.")
+            }
+            .setNegativeButton("انصراف", null)
+            .show()
+    }
+
+    private fun showHelpDialog() {
+        val helpMessage = """
+            به سامانه آوایار کپچاپرو خوش آمدید.
+
+            نحوه استفاده آسان:
+            ۱. پس از فعال‌سازی دسترسی‌پذیری برنامه، در هر سایت یا اپلیکیشنی که تصویر امنیتی (کپچا) دارد، ابتدا نشانگر را داخل کادر متنی ورود کد قرار دهید.
+            
+            ۲. کلید میانبر دسترسی‌پذیری (دکمه شناور یا فشردن همزمان کلیدهای کنترل صدا) را فشار دهید.
+            
+            ۳. درخواست شما بلافاصله به سرور ارسال شده و ظرف چند ثانیه متن کد استخراج می‌شود و به صورت خودکار درون کادر متنی جای‌گذاری و در حافظه کپی می‌گردد.
+
+            نکته برای اندروید ۱۳ و بالاتر:
+            در صورت غیرفعال بودن دکمه دسترسی‌پذیری در تنظیمات گوشی، ابتدا دکمه «تنظیمات برنامه» را در همین صفحه بزنید، منوی ۳ نقطه بالای صفحه را باز کرده و گزینه «اجازه دادن به تنظیمات محدودشده» را انتخاب کنید.
+        """.trimIndent()
+
+        AlertDialog.Builder(this)
+            .setTitle("راهنمای استفاده از آوایار کپچاپرو")
+            .setMessage(helpMessage)
+            .setPositiveButton("متوجه شدم", null)
+            .show()
     }
 
     private fun sendOtpCode() {
@@ -399,20 +434,25 @@ class MainActivity : Activity() {
         val used = json.optInt("total_used", 0)
         val exp = json.optString("expires_at", "نامحدود")
 
-        userMobileLabel.text = "شماره حساب فعال: $mobile"
-        userMobileLabel.contentDescription = userMobileLabel.text
+        userMobileLabel.text = "نام کاربری: $mobile"
+        userMobileLabel.contentDescription = "نام کاربری: $mobile"
 
         creditsLabel.text = "اعتبار باقی‌مانده: $credits درخواست"
-        creditsLabel.contentDescription = creditsLabel.text
+        creditsLabel.contentDescription = "اعتبار باقی‌مانده: $credits درخواست"
 
         usageCountLabel.text = "کل پردازش‌های انجام شده: $used عدد"
-        usageCountLabel.contentDescription = usageCountLabel.text
+        usageCountLabel.contentDescription = "کل پردازش‌های انجام شده: $used عدد"
 
         expiryLabel.text = "مهلت زمانی: ${if (exp.isBlank()) "بدون محدودیت زمانی" else exp}"
         expiryLabel.contentDescription = expiryLabel.text
     }
 
     private fun showStatus(message: String) {
+        if (message.isBlank()) {
+            resultStatus.visibility = View.GONE
+            return
+        }
+        resultStatus.visibility = View.VISIBLE
         resultStatus.text = message
         resultStatus.contentDescription = message
         announce(resultStatus)
