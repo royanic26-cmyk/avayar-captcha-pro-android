@@ -23,6 +23,7 @@ import android.widget.TextView
 import org.json.JSONObject
 import java.io.OutputStreamWriter
 import java.net.HttpURLConnection
+import java.net.SocketTimeoutException
 import java.net.URL
 import java.net.URLEncoder
 import java.util.concurrent.Executors
@@ -148,14 +149,13 @@ class MainActivity : Activity() {
         userMobileLabel = label("", 16f, true, 0xFF0F172A.toInt())
         creditsLabel = label("", 18f, true, 0xFF059669.toInt())
         usageCountLabel = label("", 14f, false, 0xFF334155.toInt())
-        expiryLabel = label("", 14f, false, 0xFF334155.toInt())
+        expiryLabel = label("", 15f, true, 0xFF0284C7.toInt())
 
         dashboardGroup.addView(userMobileLabel)
         dashboardGroup.addView(creditsLabel)
         dashboardGroup.addView(usageCountLabel)
         dashboardGroup.addView(expiryLabel)
 
-        // دکمه انتقال مستقیم و بدون لاگین به درگاه خرید سایت
         buyPlanBtn = Button(this).apply {
             text = "خرید و شارژ آنلاین اشتراک"
             setBackgroundColor(0xFF4F46E5.toInt())
@@ -183,7 +183,6 @@ class MainActivity : Activity() {
         dashboardGroup.addView(logoutButton)
         content.addView(dashboardGroup)
 
-        // دکمه‌های کنترل سرویس و دسترسی‌پذیری
         toggleServiceBtn = Button(this).apply {
             setOnClickListener {
                 val next = !preferences.getBoolean("service_active", true)
@@ -301,43 +300,59 @@ class MainActivity : Activity() {
             .show()
     }
 
+    private fun friendlyErrorMessage(code: Int, serverDetail: String?): String {
+        if (!serverDetail.isNullOrBlank()) return serverDetail
+        return when (code) {
+            400, 401 -> "کد وارد شده اشتباه یا منقضی است. لطفاً مجدداً بررسی کنید یا کد جدید دریافت نمایید."
+            403 -> "مهلت استفاده یا اعتبار حساب شما به پایان رسیده است. لطفاً اشتراک تهیه کنید یا با پشتیبانی تماس بگیرید."
+            429 -> "تعداد دفعات ورود یا درخواست کد از حد مجاز گذشته است. لطفاً دقایقی صبر کنید یا با پشتیبانی تماس بگیرید."
+            else -> "تعداد دفعات تلاش بیش از حد مجاز است یا ارتباط موقتاً برقرار نشد. لطفاً کمی صبر کنید یا با پشتیبانی تماس بگیرید."
+        }
+    }
+
     private fun sendOtpCode() {
         val mobile = mobileInput.text.toString().trim()
         if (mobile.length != 11 || !mobile.startsWith("09")) {
             showStatus("لطفاً شماره موبایل ۱۱ رقمی معتبر با صفر وارد نمایید.")
             return
         }
-        showStatus("در حال ارسال کد تایید پیامکی...")
+        showStatus("در حال ارسال کد تایید پیامکی، لطفاً صبر کنید...")
 
         worker.execute {
             try {
                 val postData = "mobile=" + URLEncoder.encode(mobile, "UTF-8")
                 val conn = (URL("$BASE_SERVER_URL/api/v1/auth/send-otp").openConnection() as HttpURLConnection).apply {
                     requestMethod = "POST"
-                    connectTimeout = 15000
-                    readTimeout = 15000
+                    connectTimeout = 60000
+                    readTimeout = 60000
                     doOutput = true
                     setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
                 }
                 OutputStreamWriter(conn.outputStream).use { it.write(postData) }
                 val code = conn.responseCode
                 val stream = if (code in 200..299) conn.inputStream else conn.errorStream
-                val body = stream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+                val body = stream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
                 conn.disconnect()
 
-                val json = JSONObject(body)
+                val json = try { JSONObject(body) } catch (_: Exception) { JSONObject() }
                 mainHandler.post {
                     if (code in 200..299 && json.optBoolean("success", false)) {
                         otpContainer.visibility = View.VISIBLE
                         preferences.edit().putString("auth_mobile", mobile).apply()
-                        showStatus(json.optString("message", "کد ارسال شد. کادر ورود کد فعال گردید."))
+                        showStatus(json.optString("message", "کد ۴ رقمی ارسال شد. لطفاً کد را وارد نمایید."))
                         otpInput.requestFocus()
                     } else {
-                        showStatus(json.optString("detail", "خطا در ارسال پیامک."))
+                        showStatus(friendlyErrorMessage(code, json.optString("detail", "")))
                     }
                 }
-            } catch (e: Exception) {
-                mainHandler.post { showStatus("خطا در ارتباط با سرور: ${e.localizedMessage}") }
+            } catch (_: SocketTimeoutException) {
+                mainHandler.post {
+                    showStatus("پاسخ سرور بیش از حد طول کشید یا تعداد تلاش‌ها از حد مجاز گذشته است. لطفاً کمی صبر کنید یا با پشتیبانی تماس بگیرید.")
+                }
+            } catch (_: Exception) {
+                mainHandler.post {
+                    showStatus("تعداد دفعات ورود یا درخواست از حد مجاز گذشته یا اینترنت قطع است. لطفاً کمی صبر کنید یا با پشتیبانی تماس بگیرید.")
+                }
             }
         }
     }
@@ -348,10 +363,10 @@ class MainActivity : Activity() {
         val deviceId = preferences.getString("device_id", "") ?: ""
 
         if (codeText.length != 4) {
-            showStatus("لطفاً کد ۴ رقمی را کامل وارد کنید.")
+            showStatus("لطفاً کد ۴ رقمی پیامک‌شده را کامل وارد کنید.")
             return
         }
-        showStatus("در حال تایید کد و اتصال به حساب...")
+        showStatus("در حال بررسی کد و فعال‌سازی حساب، لطفاً صبر کنید...")
 
         worker.execute {
             try {
@@ -361,8 +376,8 @@ class MainActivity : Activity() {
 
                 val conn = (URL("$BASE_SERVER_URL/api/v1/auth/verify-otp").openConnection() as HttpURLConnection).apply {
                     requestMethod = "POST"
-                    connectTimeout = 15000
-                    readTimeout = 15000
+                    connectTimeout = 60000
+                    readTimeout = 60000
                     doOutput = true
                     setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
                     setRequestProperty("X-Device-ID", deviceId)
@@ -370,10 +385,10 @@ class MainActivity : Activity() {
                 OutputStreamWriter(conn.outputStream).use { it.write(postData) }
                 val respCode = conn.responseCode
                 val stream = if (respCode in 200..299) conn.inputStream else conn.errorStream
-                val body = stream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+                val body = stream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
                 conn.disconnect()
 
-                val json = JSONObject(body)
+                val json = try { JSONObject(body) } catch (_: Exception) { JSONObject() }
                 mainHandler.post {
                     if (respCode in 200..299 && json.optBoolean("success", false)) {
                         val token = json.optString("session_token", "")
@@ -385,13 +400,19 @@ class MainActivity : Activity() {
 
                         updateUiState(true)
                         displayAccountStats(json)
-                        showStatus(json.optString("message", "ورود با موفقیت انجام شد."))
+                        showStatus(json.optString("message", "ورود شما با موفقیت انجام شد."))
                     } else {
-                        showStatus(json.optString("detail", "کد وارد شده اشتباه یا منقضی است."))
+                        showStatus(friendlyErrorMessage(respCode, json.optString("detail", "")))
                     }
                 }
-            } catch (e: Exception) {
-                mainHandler.post { showStatus("خطا: ${e.localizedMessage}") }
+            } catch (_: SocketTimeoutException) {
+                mainHandler.post {
+                    showStatus("زمان بررسی کد به پایان رسید. لطفاً چند لحظه صبر کرده و دوباره تلاش کنید یا با پشتیبانی تماس بگیرید.")
+                }
+            } catch (_: Exception) {
+                mainHandler.post {
+                    showStatus("تعداد دفعات تلاش از حد مجاز گذشته یا ارتباط برقرار نشد. لطفاً کمی صبر کنید یا با پشتیبانی تماس بگیرید.")
+                }
             }
         }
     }
@@ -408,8 +429,8 @@ class MainActivity : Activity() {
 
                 val conn = (URL("$BASE_SERVER_URL/api/v1/user/session-info").openConnection() as HttpURLConnection).apply {
                     requestMethod = "POST"
-                    connectTimeout = 12000
-                    readTimeout = 12000
+                    connectTimeout = 60000
+                    readTimeout = 60000
                     doOutput = true
                     setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
                     setRequestProperty("X-Device-ID", deviceId)
@@ -417,7 +438,7 @@ class MainActivity : Activity() {
                 OutputStreamWriter(conn.outputStream).use { it.write(postData) }
                 val respCode = conn.responseCode
                 val stream = if (respCode in 200..299) conn.inputStream else conn.errorStream
-                val body = stream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+                val body = stream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
                 conn.disconnect()
 
                 if (respCode in 200..299) {
@@ -432,7 +453,7 @@ class MainActivity : Activity() {
         val mobile = json.optString("mobile", preferences.getString("auth_mobile", "") ?: "")
         val credits = json.optInt("credits", 0)
         val used = json.optInt("total_used", 0)
-        val exp = json.optString("expires_at", "نامحدود")
+        val expDisplay = json.optString("expires_at", "بدون محدودیت زمانی")
 
         userMobileLabel.text = "نام کاربری: $mobile"
         userMobileLabel.contentDescription = "نام کاربری: $mobile"
@@ -443,8 +464,8 @@ class MainActivity : Activity() {
         usageCountLabel.text = "کل پردازش‌های انجام شده: $used عدد"
         usageCountLabel.contentDescription = "کل پردازش‌های انجام شده: $used عدد"
 
-        expiryLabel.text = "مهلت زمانی: ${if (exp.isBlank()) "بدون محدودیت زمانی" else exp}"
-        expiryLabel.contentDescription = expiryLabel.text
+        expiryLabel.text = "مهلت باقی‌مانده: $expDisplay"
+        expiryLabel.contentDescription = "مهلت باقی‌مانده: $expDisplay"
     }
 
     private fun showStatus(message: String) {

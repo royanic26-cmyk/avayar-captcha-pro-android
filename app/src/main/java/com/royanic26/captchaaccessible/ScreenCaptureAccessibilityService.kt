@@ -26,7 +26,9 @@ import android.widget.Button
 import android.widget.Toast
 import java.io.ByteArrayOutputStream
 import java.net.HttpURLConnection
+import java.net.SocketTimeoutException
 import java.net.URL
+import java.net.UnknownHostException
 import java.util.UUID
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
@@ -134,7 +136,7 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
     private fun captureAndUpload() {
         val prefs = getSharedPreferences("app_settings", Context.MODE_PRIVATE)
         if (!prefs.getBoolean("service_active", true)) {
-            announce("سرویس خواندن کپچا موقتاً غیرفعال است.")
+            announce("سرویس خواندن کپچا در داخل برنامه غیرفعال شده است.")
             return
         }
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
@@ -152,7 +154,7 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
         }
 
         if (!requestInProgress.compareAndSet(false, true)) {
-            announce("درخواست قبلی در حال پردازش است...")
+            announce("درخواست قبلی در حال پردازش است، لطفاً صبر کنید.")
             return
         }
 
@@ -182,8 +184,12 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
                 worker.execute {
                     val result = try {
                         uploadToEndpoint(copy, MainActivity.DEFAULT_SERVER_URL, mobile, token, deviceId)
+                    } catch (e: SocketTimeoutException) {
+                        "زمان انتظار پاسخ سرور به پایان رسید. لطفاً اتصال اینترنت را بررسی کرده و دوباره تلاش کنید."
+                    } catch (e: UnknownHostException) {
+                        "عدم دسترسی به اینترنت یا سرور آوایار. لطفاً اتصال اینترنت خود را بررسی کنید."
                     } catch (e: Exception) {
-                        "خطا در ارسال تصویر: ${e.localizedMessage ?: e.javaClass.simpleName}"
+                        "خطا در ارتباط با سرور. لطفاً مجدداً تلاش کنید."
                     } finally {
                         copy.recycle()
                     }
@@ -195,7 +201,7 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
             override fun onFailure(errorCode: Int) {
                 if (wasVisible) floatingButton?.visibility = View.VISIBLE
                 requestInProgress.set(false)
-                announce("خطا در تصویربرداری: کد $errorCode")
+                announce("خطا در تصویربرداری از صفحه: کد $errorCode")
             }
         })
     }
@@ -218,14 +224,14 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
 
         val connection = (URL(endpoint).openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
-            connectTimeout = 20000
-            readTimeout = 45000
+            connectTimeout = 60000
+            readTimeout = 60000
             doOutput = true
             setRequestProperty("Authorization", "Basic $authHeader")
             setRequestProperty("X-Device-ID", deviceId)
             setRequestProperty("Accept", "text/plain, application/json")
             setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
-            setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14; Mobile) AvayarAccessibility/5.0")
+            setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14; Mobile) AvayarAccessibility/5.9")
         }
 
         try {
@@ -244,9 +250,13 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
                 val answer = extractServerAnswer(body)
                 if (answer.isBlank()) "پاسخی از سرور دریافت نشد." else "${SUCCESS_PREFIX}$answer"
             } else if (code == 401) {
-                "نشست شما منقضی شده است. لطفاً وارد برنامه شوید."
+                "نشست کاربری شما منقضی شده است. لطفاً وارد برنامه شوید."
             } else if (code == 403) {
-                body.ifBlank { "اعتبار شما به پایان رسیده است. لطفاً حساب خود را شارژ کنید." }
+                val errDetail = extractServerAnswer(body)
+                errDetail.ifBlank { "اعتبار شما به پایان رسیده است. لطفاً حساب خود را شارژ کنید." }
+            } else if (code == 429) {
+                val errDetail = extractServerAnswer(body)
+                errDetail.ifBlank { "تعداد درخواست‌ها بیش از حد مجاز است. لطفاً چند لحظه صبر کنید." }
             } else {
                 "خطای سرور: کد $code"
             }
@@ -276,7 +286,7 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
         if (!body.startsWith("{") && !body.startsWith("[")) return body
         return try {
             val json = org.json.JSONObject(body)
-            val keys = listOf("code", "answer", "result", "text", "message")
+            val keys = listOf("detail", "code", "answer", "result", "text", "message")
             keys.firstNotNullOfOrNull { key ->
                 val value = json.opt(key)
                 when (value) {
