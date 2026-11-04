@@ -29,24 +29,22 @@ Jjobs:
           sdkmanager "platforms;android-35" "build-tools;35.0.0"
           yes | sdkmanager --licenses
 
+      - name: Generate Release Keystore
+        run: |
+          keytool -genkey -v -keystore app/my-release-key.jks -keyalg RSA -keysize 2048 -validity 10000 -alias avayar -storepass avayar1234 -keypass avayar1234 -dname "CN=Avayar, OU=App, O=Avayar, L=Tehran, ST=Tehran, C=IR"
+
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.9"
 
-      - name: Generate Release Keystore and Build
-        run: |
-          keytool -genkey -v -keystore my-release-key.jks -keyalg RSA -keysize 2048 -validity 10000 -alias avayar -storepass avayar1234 -keypass avayar1234 -dname "CN=Avayar, OU=App, O=Avayar, L=Tehran, ST=Tehran, C=IR"
-          gradle --no-daemon clean assembleRelease
-          UNGIGNED_APK=$(find app/build/outputs/apk/release -name "*-unsigned.apk" -o -name "*release*.apk" | head -n 1)
-          jarsigner -verbose -sigalg SHA256withRSA -digestalg SHA-256 -keystore my-release-key.jks -storepass avayar1234 -keypass avayar1234 $UNCIGNED_APK avayar
-          mkdir -p output_apk
-          cp $UNGIGNED_APK output_apk/avayar-release-signed.apk
+      - name: Build Release APK
+        run: gradle --no-daemon clean assembleRelease
 
       - name: Upload Signed Release APK
         uses: actions/upload-artifact@v4
         with:
           name: avayar-signed-release-apk
-          path: output_apk/avayar-release-signed.apk
+          path: app/build/outputs/apk/release/*.apk
           if-no-files-found: error
           retention-days: 14
