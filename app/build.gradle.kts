@@ -15,7 +15,23 @@ android {
         versionName = "1.0.0"
     }
 
-    compileOptions {
+      signingConfigs {
+    create("release") {
+      storeFile = file("my-release-key.jks")
+      storePassword = "avayar1234"
+      keyAlias = "avayar"
+      keyPassword = "avayar1234"
+    }
+  }
+
+  buildTypes {
+    getByName("release") {
+      isMinifyEnabled = false
+      signingConfig = signingConfigs.getByName("release")
+    }
+  }
+
+  compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
