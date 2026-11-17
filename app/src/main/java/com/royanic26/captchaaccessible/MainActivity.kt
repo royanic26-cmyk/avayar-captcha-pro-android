@@ -1302,7 +1302,7 @@ class MainActivity : Activity() {
   legalCard.addView(makeLabel("⚖️ قوانین، حریم خصوصی و شناسنامه برنامه", 15f, true, colAccent))
   legalCard.addView(
    makeLabel(
-    "سامانه هوشمند دسترس‌پذیری آوایار (نسخه ۱.۱.۰)\nپشتیبانی رسمی: support@avayar.site | وب‌سایت: avayar.site",
+    "سامانه هوشمند دسترس‌پذیری آوایار (نسخه ۱.۲.۰)\nپشتیبانی رسمی: support@avayar.site | وب‌سایت: avayar.site",
     12f,
     false,
     colTextSecondary
