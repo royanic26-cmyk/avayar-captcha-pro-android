@@ -1,42 +1,51 @@
 plugins {
-    id("com.android.application")
-    id("org.jetbrains.kotlin.android")
+  id("com.android.application")
+  id("org.jetbrains.kotlin.android")
 }
 
 android {
-    namespace = "com.royanic26.captchaaccessible"
-    compileSdk = 35
+  namespace = "com.royanic26.captchaaccessible"
+  compileSdk = 35
 
-    defaultConfig {
-        applicationId = "com.royanic26.captchaaccessible"
-        minSdk = 26
-        targetSdk = 35
-        versionCode = 4
-        versionName = "1.1.0"
-    }
+  defaultConfig {
+    applicationId = "com.royanic26.captchaaccessible"
+    minSdk = 26
+    targetSdk = 35
+    versionCode = 5
+    versionName = "1.1.1"
+  }
 
-      signingConfigs {
+  signingConfigs {
     create("release") {
-      storeFile = file("my-release-key.jks")
-      storePassword = "avayar1234"
-      keyAlias = "avayar"
-      keyPassword = "avayar1234"
+      storeFile = file("avayar-permanent-release.jks")
+      storePassword = System.getenv("KEYSTORE_PASSWORD") ?: "AvayarSecure2026!"
+      keyAlias = System.getenv("KEY_ALIAS") ?: "avayar_official"
+      keyPassword = System.getenv("KEY_PASSWORD") ?: "AvayarSecure2026!"
+      enableV1Signing = true
+      enableV2Signing = true
+      enableV3Signing = true
     }
   }
 
   buildTypes {
     getByName("release") {
       isMinifyEnabled = false
+      isShrinkResources = false
       signingConfig = signingConfigs.getByName("release")
     }
   }
 
-  compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
-    }
+  dependenciesInfo {
+    includeInApk = false
+    includeInBundle = false
+  }
 
-    kotlinOptions {
-        jvmTarget = "17"
-    }
+  compileOptions {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+  }
+
+  kotlinOptions {
+    jvmTarget = "17"
+  }
 }
